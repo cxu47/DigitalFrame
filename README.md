@@ -11,6 +11,7 @@
 - add collage options
 - security protocal
 - overwride policies
+- check stored pics at reboot
 
 # Progress
 - [x] created server and client structure  
