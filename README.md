@@ -12,6 +12,8 @@
 - security protocal
 - overwride policies
 - check stored pics at reboot
+- diy server url
+- diy pic elapse time
 
 # Progress
 - [x] created server and client structure  
