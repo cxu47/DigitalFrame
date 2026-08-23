@@ -68,8 +68,6 @@ def display_photo(screen, photo_path):
         print(f"Skipping unavailable image: {photo_path.name}")
         return False
 
-    image = pygame.image.load(photo_path)
-
     screen_width, screen_height = screen.get_size()
     image_width, image_height = image.get_size()
 
