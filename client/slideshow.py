@@ -67,8 +67,8 @@ def show_first_photo(): #only for testing. later replaced by the following two f
 def display_photo(screen, photo_path):
     try:
         image = pygame.image.load(photo_path)
-    except pygame.error:
-        print(f"Skipping unreadable image: {photo_path.name}")
+    except (pygame.error, FileNotFoundError, OSError):
+        print(f"Skipping unavailable image: {photo_path.name}")
         return False
 
     image = pygame.image.load(photo_path)
@@ -95,6 +95,7 @@ def display_photo(screen, photo_path):
     screen.fill("black")
     screen.blit(image, (x, y))
     pygame.display.flip()
+    return True
 
 def show_slideshow():
     pygame.init()
@@ -111,7 +112,9 @@ def show_slideshow():
             return
 
         for photo_path in photos:
-            display_photo(screen, photo_path)
+            success = display_photo(screen, photo_path)
+            if not success:
+                continue
 
             start_time = pygame.time.get_ticks()
 
