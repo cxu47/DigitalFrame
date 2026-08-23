@@ -10,3 +10,12 @@
 - create option for encryptions
 - add collage options
 - security protocal
+- overwride policies
+
+# Progress
+- [x] created server and client structure  
+- [x] created docker file  
+- [x] created photo upload function  
+
+# Current Features (important notes)
+- No duplicate detection. New photo if dup name, will replace older photo
