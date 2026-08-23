@@ -8,4 +8,5 @@
 
 # Potential Upgrades
 - create option for encryptions
-- add collage options 
+- add collage options
+- security protocal
