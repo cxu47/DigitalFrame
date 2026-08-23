@@ -22,7 +22,11 @@ def download_photo(filename):
 def sync_photos():
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    server_photos = get_photo_names()
+    try:
+        server_photos = get_photo_names()
+    except httpx.HTTPError as exc:
+        print(f"Sync failed: {exc}")
+        return
 
     for filename in server_photos:
         destination = CACHE_DIR / filename
@@ -32,7 +36,6 @@ def sync_photos():
             download_photo(filename)
         else:
             print(f"Already cached: {filename}")
-
 
 if __name__ == "__main__":
     sync_photos()
