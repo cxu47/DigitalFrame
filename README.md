@@ -7,6 +7,7 @@
 - runs on a rasberry pi / banana pi with a display
 
 # Potential Upgrades
+- regulate file name "no space etc."
 - create option for encryptions
 - add collage options
 - security protocal
