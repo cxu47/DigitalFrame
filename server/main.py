@@ -1,6 +1,7 @@
 from pathlib import Path
-
 from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import FileResponse
+
 
 app = FastAPI()
 
@@ -37,3 +38,7 @@ def list_photos():
 
     return {"photos": photos}
 
+@app.get("/photos/{filename}")
+def get_photo(filename: str):
+    path = PHOTO_DIR / filename
+    return FileResponse(path)
