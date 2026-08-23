@@ -1,5 +1,5 @@
 from pathlib import Path
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
 
 
@@ -41,4 +41,9 @@ def list_photos():
 @app.get("/photos/{filename}")
 def get_photo(filename: str):
     path = PHOTO_DIR / filename
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Photo not found",
+        )
     return FileResponse(path)

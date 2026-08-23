@@ -39,3 +39,11 @@ def test_get_photo(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.content == b"fake image data"
+
+def test_get_missing_photo_returns_404(tmp_path, monkeypatch):
+    monkeypatch.setattr("server.main.PHOTO_DIR", tmp_path)
+
+    response = client.get("/photos/missing.jpg")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Photo not found"
