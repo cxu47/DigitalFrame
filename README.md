@@ -8,6 +8,7 @@
 
 # Potential Upgrades
 - regulate file name "no space etc."
+- random shuffle function
 - create option for encryptions
 - add collage options
 - security protocal
