@@ -1,9 +1,6 @@
 from pathlib import Path
 import httpx
-
-SERVER_URL = "http://127.0.0.1:8000"
-CACHE_DIR = Path("client/cache")
-TIMEOUT = 60
+from .config import CACHE_DIR, SERVER_URL, TIMEOUT
 
 def get_photo_names():
     response = httpx.get(f"{SERVER_URL}/photos", timeout=TIMEOUT,)

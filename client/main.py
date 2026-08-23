@@ -1,8 +1,8 @@
 import threading
 import time
 
-from client.sync import sync_photos
-from client.slideshow import show_slideshow
+from .sync import sync_photos
+from .slideshow import show_slideshow
 
 SYNC_INTERVAL = 60 # 60 sec interval for sync
 

@@ -1,9 +1,6 @@
 from pathlib import Path
 import pygame
-
-CACHE_DIR = Path("client/cache")
-DISPLAY_SECONDS = 5
-IDLE_SECONDS = 0.5
+from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 
 def get_cached_photos():
     supported = {".jpg", ".jpeg", ".png", ".webp"}
