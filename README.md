@@ -29,10 +29,10 @@
 ### phase 2 - google drive cloud server 
 - [x] download cred and tokens
 - [x] check listing
-- [] convert iphone image formats
+- [ ] convert iphone image formats
 
 ### phase 3 - alibaba OSS cloud server
-- [] check long term token and expiration date
+- [ ] check long term token and expiration date
 
 # Current Features (important notes)
 - No duplicate detection. New photo if dup name, will replace older photo
