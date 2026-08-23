@@ -26,3 +26,14 @@ async def upload_photo(file: UploadFile = File(...)):
         "filename": file.filename,
         "status": "uploaded",
     }
+
+@app.get("/photos")
+def list_photos():
+    photos = [
+        file.name
+        for file in PHOTO_DIR.iterdir()
+        if file.is_file() and file.name != ".gitkeep"
+    ]
+
+    return {"photos": photos}
+
