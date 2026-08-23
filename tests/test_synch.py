@@ -72,3 +72,25 @@ def test_sync_keeps_cache_when_server_unavailable(tmp_path, monkeypatch):
 
     assert cached_photo.exists()
     assert cached_photo.read_bytes() == b"existing photo"
+
+
+def test_download_photo_uses_temp_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(sync, "CACHE_DIR", tmp_path)
+
+    class FakeResponse:
+        content = b"fake image data"
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(
+        sync.httpx,
+        "get",
+        lambda url: FakeResponse(),
+    )
+
+    sync.download_photo("test.jpg")
+
+    assert (tmp_path / "test.jpg").exists()
+    assert (tmp_path / "test.jpg").read_bytes() == b"fake image data"
+    assert not (tmp_path / "test.jpg.part").exists()

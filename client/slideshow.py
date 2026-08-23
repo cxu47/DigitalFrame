@@ -97,8 +97,6 @@ def display_photo(screen, photo_path):
     pygame.display.flip()
 
 def show_slideshow():
-    photos = get_cached_photos()
-
     if not photos:
         print("No cached photos available.")
         return
@@ -111,6 +109,7 @@ def show_slideshow():
     running = True
 
     while running:
+        photos = get_cached_photos()
         for photo_path in photos:
             display_photo(screen, photo_path)
 
