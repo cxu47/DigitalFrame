@@ -10,14 +10,15 @@ def get_photo_names():
     response.raise_for_status()
     return response.json()["photos"]
 
-
 def download_photo(filename):
     response = httpx.get(f"{SERVER_URL}/photos/{filename}")
     response.raise_for_status()
 
     destination = CACHE_DIR / filename
-    destination.write_bytes(response.content)
+    temp_destination = CACHE_DIR / f"{filename}.part"
 
+    temp_destination.write_bytes(response.content)
+    temp_destination.replace(destination)
 
 def sync_photos():
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
