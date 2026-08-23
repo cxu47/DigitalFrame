@@ -18,13 +18,21 @@
 - diy pic elapse time
 
 # Progress
+### phase 1 - fast api local
 - [x] created server and client structure  
 - [x] created docker file  
 - [x] created photo upload function
 - [x] created temp download extension before completion 
 - [x] created loop checking cache folder
 - [x] created loop checking server to update cache folder in the background
-- [x] 
+ 
+### phase 2 - google drive cloud server 
+- [x] download cred and tokens
+- [x] check listing
+- [] convert iphone image formats
+
+### phase 3 - alibaba OSS cloud server
+- [] check long term token and expiration date
 
 # Current Features (important notes)
 - No duplicate detection. New photo if dup name, will replace older photo
