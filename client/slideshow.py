@@ -6,12 +6,13 @@ DISPLAY_SECONDS = 5
 IDLE_SECONDS = 0.5
 
 def get_cached_photos():
-    return [
+    supported = {".jpg", ".jpeg", ".png", ".webp"}
+
+    return sorted(
         path
         for path in CACHE_DIR.iterdir()
-        if path.is_file() and path.name != ".gitkeep"
-    ]
-
+        if path.is_file() and path.suffix.lower() in supported
+    )
 
 def show_first_photo(): #only for testing. later replaced by the following two functions.
     photos = get_cached_photos()
@@ -64,6 +65,12 @@ def show_first_photo(): #only for testing. later replaced by the following two f
     pygame.quit()
 
 def display_photo(screen, photo_path):
+    try:
+        image = pygame.image.load(photo_path)
+    except pygame.error:
+        print(f"Skipping unreadable image: {photo_path.name}")
+        return False
+
     image = pygame.image.load(photo_path)
 
     screen_width, screen_height = screen.get_size()
