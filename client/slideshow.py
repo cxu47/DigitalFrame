@@ -1,6 +1,7 @@
 from pathlib import Path
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
+from PIL import Image, ImageOps
 
 def get_cached_photos():
     supported = {".jpg", ".jpeg", ".png", ".webp"}
@@ -63,7 +64,16 @@ def show_first_photo(): #only for testing. later replaced by the following two f
 
 def display_photo(screen, photo_path):
     try:
-        image = pygame.image.load(photo_path)
+        with Image.open(photo_path) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.convert("RGB")
+
+            image = pygame.image.fromstring(
+                img.tobytes(),
+                img.size,
+                img.mode
+            )
+
     except (pygame.error, FileNotFoundError, OSError):
         print(f"Skipping unavailable image: {photo_path.name}")
         return False
