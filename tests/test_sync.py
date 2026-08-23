@@ -10,7 +10,7 @@ def test_download_photo(tmp_path, monkeypatch):
         def raise_for_status(self):
             pass
 
-    def fake_get(url):
+    def fake_get(url, **kwargs):
         return FakeResponse()
 
     monkeypatch.setattr(sync.httpx, "get", fake_get)
@@ -86,7 +86,7 @@ def test_download_photo_uses_temp_file(tmp_path, monkeypatch):
     monkeypatch.setattr(
         sync.httpx,
         "get",
-        lambda url: FakeResponse(),
+        lambda url, **kwargs: FakeResponse(),
     )
 
     sync.download_photo("test.jpg")
