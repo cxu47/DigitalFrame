@@ -1,8 +1,28 @@
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, File, UploadFile
 
 app = FastAPI()
+
+PHOTO_DIR = Path("server/photos")
+PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/photos")
+async def upload_photo(file: UploadFile = File(...)):
+    destination = PHOTO_DIR / file.filename
+
+    contents = await file.read()
+
+    with open(destination, "wb") as output:
+        output.write(contents)
+
+    return {
+        "filename": file.filename,
+        "status": "uploaded",
+    }
