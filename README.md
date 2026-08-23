@@ -1,4 +1,4 @@
-# Goals
+# DigitalFrame Goals
 - Create a client linux application that does the following:
 - connects to given server to read picture files;
 - update local picture files to del / download new files;
