@@ -20,7 +20,12 @@
 # Progress
 - [x] created server and client structure  
 - [x] created docker file  
-- [x] created photo upload function  
+- [x] created photo upload function
+- [x] created temp download extension before completion 
+- [x] created loop checking cache folder
+- [x] created loop checking server to update cache folder in the background
+- [x] 
 
 # Current Features (important notes)
 - No duplicate detection. New photo if dup name, will replace older photo
+- currently no remove photo function on server -- only way to update cache from app is to download. Need to test on deleting photos if slideshow updates. currently only checks manually delete from cache folder, works fine.
