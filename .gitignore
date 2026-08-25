@@ -3,9 +3,6 @@ __pycache__/
 *.pyc
 .git/
 .pytest_cache/
-# server photo files
-server/photos/*
-!server/photos/.gitkeep
 # client cache files
 client/cache/*
 !client/cache/.gitkeep
