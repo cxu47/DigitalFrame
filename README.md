@@ -6,6 +6,9 @@
 - show picture slides as a digital picture frame;
 - runs on a rasberry pi / banana pi with a display
 
+## Demo
+![DigitalFrame demo](assets/demo.gif)
+
 # Potential Upgrades
 - regulate file name "no space etc."
 - random shuffle function
