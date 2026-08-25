@@ -1,11 +1,14 @@
-from pathlib import Path
-
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from ..config import GOOGLE_SCOPES, GOOGLE_CREDENTIALS_FILE, GOOGLE_TOKEN_FILE
+from googleapiclient.http import MediaIoBaseDownload
 
+from ..config import (
+    GOOGLE_SCOPES,
+    GOOGLE_CREDENTIALS_FILE,
+    GOOGLE_TOKEN_FILE,
+)
 
 
 def get_drive_service():
@@ -31,12 +34,26 @@ def get_drive_service():
 
     return build("drive", "v3", credentials=creds)
 
-def list_photos(driver_foler):
+
+def list_photos(drive_folder_id):
     service = get_drive_service()
 
     result = service.files().list(
-        q=f"'{driver_foler}' in parents and trashed = false",
+        q=f"'{drive_folder_id}' in parents and trashed = false",
         fields="files(id, name, mimeType, modifiedTime)",
     ).execute()
 
     return result.get("files", [])
+
+
+def download_photo(file_id, destination):
+    service = get_drive_service()
+
+    request = service.files().get_media(fileId=file_id)
+
+    with open(destination, "wb") as file:
+        downloader = MediaIoBaseDownload(file, request)
+
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
