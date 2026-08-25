@@ -43,8 +43,13 @@ def list_photos(drive_folder_id):
         fields="files(id, name, mimeType, modifiedTime)",
     ).execute()
 
-    return result.get("files", [])
+    files = result.get("files", [])
 
+    return [
+        file
+        for file in files
+        if file["mimeType"].startswith("image/")
+    ]
 
 def download_photo(file_id, destination):
     service = get_drive_service()
