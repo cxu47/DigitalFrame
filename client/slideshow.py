@@ -2,6 +2,8 @@ from pathlib import Path
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
+register_heif_opener()
 
 def handle_events():
     for event in pygame.event.get():
@@ -27,7 +29,7 @@ def display_message(screen, message):
     pygame.display.flip()
 
 def get_cached_photos():
-    supported = {".jpg", ".jpeg", ".png", ".webp"}
+    supported = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
     return sorted(
         path
