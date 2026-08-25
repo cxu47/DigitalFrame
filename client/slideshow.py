@@ -3,6 +3,29 @@ import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from PIL import Image, ImageOps
 
+def handle_events():
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            return False
+
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            return False
+
+    return True
+
+def display_message(screen, message):
+    screen.fill("black")
+
+    font = pygame.font.Font(None, 36)
+    text = font.render(message, True, "white")
+
+    text_rect = text.get_rect(
+        center=screen.get_rect().center
+    )
+
+    screen.blit(text, text_rect)
+    pygame.display.flip()
+
 def get_cached_photos():
     supported = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -52,13 +75,8 @@ def show_first_photo(): #only for testing. later replaced by the following two f
     running = True
 
     while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+        running = handle_events()
 
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    running = False
 
     pygame.quit()
 
@@ -113,8 +131,17 @@ def show_slideshow():
     while running:
         photos = get_cached_photos()
         if not photos:
-            print("No cached photos available.")
-            return
+            display_message(
+                screen,
+                "No cached photos available."
+            )
+
+            running = handle_events()
+
+            pygame.time.wait(int(IDLE_SECONDS * 1000))
+            continue
+
+
 
         for photo_path in photos:
             success = display_photo(screen, photo_path)
@@ -127,13 +154,7 @@ def show_slideshow():
                 pygame.time.get_ticks() - start_time
                 < int(DISPLAY_SECONDS * 1000)
             ):
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        running = False
-
-                    elif event.type == pygame.KEYDOWN:
-                        if event.key == pygame.K_ESCAPE:
-                            running = False
+                running = handle_events()
 
                 if not running:
                     break
@@ -146,5 +167,4 @@ def show_slideshow():
     pygame.quit()
 
 if __name__ == "__main__":
-#    show_first_photo()
     show_slideshow()
