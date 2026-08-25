@@ -3,8 +3,7 @@ import time
 
 from .sync import sync_photos
 from .slideshow import show_slideshow
-
-SYNC_INTERVAL = 60 # 60 sec interval for sync
+from .config import SYNC_INTERVAL
 
 
 def sync_loop():
