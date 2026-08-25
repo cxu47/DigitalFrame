@@ -3,7 +3,7 @@ from pathlib import Path
 # fastAPI server
 SERVER_URL = "http://127.0.0.1:8000"
 TIMEOUT = 60
-SYNC_INTERVAL = 60 
+SYNC_INTERVAL = 1 #60 
 
 # client configs
 CLIENT_DIR = Path(__file__).resolve().parent
