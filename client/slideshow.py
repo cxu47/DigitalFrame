@@ -29,7 +29,7 @@ def display_message(screen, message):
     pygame.display.flip()
 
 def get_cached_photos():
-    supported = {".jpg", ".jpeg", ".png", ".webp", "heic", "heif"}
+    supported = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
     return sorted(
         path
