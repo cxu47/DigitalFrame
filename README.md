@@ -44,6 +44,7 @@ The DigitalFrame client is designed to:
 - If two remote files have the same name, the newer download may replace the existing cached file.
 - Remote deletion reconciliation is not yet implemented. Removing a photo from the cloud does not currently remove its cached copy automatically.
 - The project is currently a prototype and has not undergone a complete security review.
+- Connection to google drive is using google-api-python-client service and has automatic time out 60 sec
 
 ## Potential Upgrades
 
