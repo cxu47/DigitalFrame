@@ -35,6 +35,7 @@ pygame==2.6.1
 Pygments==2.21.0
 pyparsing==3.3.2
 pytest==9.1.1
+python-dotenv==1.2.3
 python-multipart==0.0.32
 requests==2.34.2
 requests-oauthlib==2.0.0

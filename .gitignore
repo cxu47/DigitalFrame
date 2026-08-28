@@ -9,3 +9,5 @@ client/cache/*
 # OAuth / API credentials
 client/secrets/*
 !client/secrets/.gitkeep
+# environmental variables
+.env

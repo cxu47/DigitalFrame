@@ -1,18 +1,20 @@
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-# fastAPI server
-SERVER_URL = "http://127.0.0.1:8000"
-TIMEOUT = 60
-SYNC_INTERVAL = 1 #60 
-
-# client configs
 CLIENT_DIR = Path(__file__).resolve().parent
-CACHE_DIR = CLIENT_DIR / "cache"
-DISPLAY_SECONDS = 5
-IDLE_SECONDS = 0.5
+load_dotenv(CLIENT_DIR.parent / ".env")
+CACHE_DIR = CLIENT_DIR / os.getenv("CACHE_FOLDER")
+
+#slideshow
+DISPLAY_SECONDS =  float(os.getenv("DISPLAY_SECONDS"))
+IDLE_SECONDS =  float(os.getenv("IDLE_SECONDS"))
+
+#sync
+SYNC_INTERVAL = float(os.getenv("SYNC_INTERVAL")) 
 
 # google configs (inside client/)
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-GOOGLE_DRIVE_FOLDER_ID = "1PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1"
-GOOGLE_CREDENTIALS_FILE = CLIENT_DIR / "secrets" / "google_credentials.json"
-GOOGLE_TOKEN_FILE =  CLIENT_DIR / "secrets" / "google_token.json"
+GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+GOOGLE_CREDENTIALS_FILE = Path(CLIENT_DIR / os.getenv("SECRETS_FOLDER") / os.getenv("GOOGLE_CREDENTIALS_FILE"))
+GOOGLE_TOKEN_FILE = Path(CLIENT_DIR / os.getenv("SECRETS_FOLDER") / os.getenv("GOOGLE_TOKEN_FILE"))
