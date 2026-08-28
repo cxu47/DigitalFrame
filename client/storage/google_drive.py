@@ -28,7 +28,7 @@ def get_drive_service():
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            logger.info("Refreshing Google Drive credentials")
+            logger.debug("Refreshing Google Drive credentials")
             creds.refresh(Request())
         else:
             logger.info("Starting interactive Google Drive authorization")
@@ -67,6 +67,7 @@ def list_photos(drive_folder_id):
         len(photos),
     )
     return photos
+
 
 def download_photo(file_id, destination):
     logger.debug("Starting Google Drive media download")

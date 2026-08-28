@@ -16,3 +16,6 @@ def configure_logging():
         format=LOG_FORMAT,
         datefmt=LOG_DATE_FORMAT,
     )
+    logging.getLogger("googleapiclient.discovery_cache").setLevel(
+        logging.WARNING
+    )

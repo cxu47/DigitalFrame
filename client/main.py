@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def sync_loop():
-    logger.info(
+    logger.debug(
         "Background sync loop started with a %s-second interval",
         SYNC_INTERVAL,
     )
@@ -34,7 +34,7 @@ def main():
         name="photo-sync",
     )
     sync_thread.start()
-    logger.info("Background sync thread started")
+    logger.debug("Background sync thread started")
 
     try:
         show_slideshow()

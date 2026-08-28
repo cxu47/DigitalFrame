@@ -3,6 +3,52 @@ import logging
 from client.storage import google_drive
 
 
+def test_refresh_credentials_logs_at_debug(
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
+    token_file = tmp_path / "google_token.json"
+    token_file.write_text("{}")
+
+    class FakeCredentials:
+        valid = False
+        expired = True
+        refresh_token = "private-refresh-token"
+
+        def refresh(self, request):
+            pass
+
+        def to_json(self):
+            return "{}"
+
+    monkeypatch.setattr(google_drive, "GOOGLE_TOKEN_FILE", token_file)
+    monkeypatch.setattr(
+        google_drive.Credentials,
+        "from_authorized_user_file",
+        lambda token_path, scopes: FakeCredentials(),
+    )
+    monkeypatch.setattr(
+        google_drive,
+        "build",
+        lambda *args, **kwargs: object(),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=google_drive.__name__):
+        google_drive.get_drive_service()
+
+    refresh_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "Refreshing Google Drive credentials"
+    )
+    assert refresh_record.levelno == logging.DEBUG
+    assert all(
+        "private-refresh-token" not in message
+        for message in caplog.messages
+    )
+
+
 def test_list_photos_filters_non_images_and_logs_boundaries(
     monkeypatch,
     caplog,

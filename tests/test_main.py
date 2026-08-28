@@ -30,7 +30,7 @@ def test_main_runs_initial_sync_and_slideshow(
     )
     monkeypatch.setattr(main.threading, "Thread", FakeThread)
 
-    with caplog.at_level(logging.INFO, logger=main.__name__):
+    with caplog.at_level(logging.DEBUG, logger=main.__name__):
         main.main()
 
     assert calls == ["configure", "sync", "thread", "slideshow"]
@@ -44,6 +44,7 @@ def test_main_runs_initial_sync_and_slideshow(
         "Background sync thread started",
         "DigitalFrame client stopped",
     ]
+    assert caplog.records[1].levelno == logging.DEBUG
 
 
 def test_sync_loop_logs_interval_before_sleep(monkeypatch, caplog):
@@ -52,7 +53,7 @@ def test_sync_loop_logs_interval_before_sleep(monkeypatch, caplog):
 
     monkeypatch.setattr(main.time, "sleep", stop_loop)
 
-    with caplog.at_level(logging.INFO, logger=main.__name__):
+    with caplog.at_level(logging.DEBUG, logger=main.__name__):
         try:
             main.sync_loop()
         except RuntimeError as exc:
@@ -61,3 +62,4 @@ def test_sync_loop_logs_interval_before_sleep(monkeypatch, caplog):
     assert caplog.messages == [
         f"Background sync loop started with a {main.SYNC_INTERVAL}-second interval"
     ]
+    assert caplog.records[0].levelno == logging.DEBUG

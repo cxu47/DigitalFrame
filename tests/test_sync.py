@@ -19,7 +19,7 @@ def test_sync_downloads_missing_photo(tmp_path, monkeypatch, caplog):
 
     monkeypatch.setattr(sync, "download_photo", fake_download)
 
-    with caplog.at_level(logging.INFO, logger=sync.__name__):
+    with caplog.at_level(logging.DEBUG, logger=sync.__name__):
         sync.sync_photos()
 
     assert download_calls == [
@@ -30,9 +30,18 @@ def test_sync_downloads_missing_photo(tmp_path, monkeypatch, caplog):
     assert "Downloading one.jpg" in caplog.messages
     assert "Downloaded one.jpg" in caplog.messages
     assert (
-        "Photo sync completed: 1 remote, 1 downloaded, 0 cached, 0 failed"
+        "Photo sync completed with changes: "
+        "1 remote, 1 downloaded, 0 cached, 0 failed"
         in caplog.messages
     )
+    assert caplog.records[0].getMessage() == "Photo sync started"
+    assert caplog.records[0].levelno == logging.DEBUG
+    completion_record = next(
+        record
+        for record in caplog.records
+        if "completed with changes" in record.getMessage()
+    )
+    assert completion_record.levelno == logging.INFO
 
 
 def test_sync_skips_cached_photo(tmp_path, monkeypatch, caplog):
@@ -61,9 +70,16 @@ def test_sync_skips_cached_photo(tmp_path, monkeypatch, caplog):
     assert cached_photo.read_bytes() == b"already cached"
     assert "Already cached: one.jpg" in caplog.messages
     assert (
-        "Photo sync completed: 1 remote, 0 downloaded, 1 cached, 0 failed"
+        "Photo sync completed with no changes: "
+        "1 remote, 0 downloaded, 1 cached, 0 failed"
         in caplog.messages
     )
+    completion_record = next(
+        record
+        for record in caplog.records
+        if "completed with no changes" in record.getMessage()
+    )
+    assert completion_record.levelno == logging.DEBUG
 
 
 def test_sync_keeps_cache_when_listing_fails(
@@ -111,7 +127,7 @@ def test_sync_removes_partial_file_when_download_fails(
 
     monkeypatch.setattr(sync, "download_photo", fake_download)
 
-    with caplog.at_level(logging.INFO, logger=sync.__name__):
+    with caplog.at_level(logging.DEBUG, logger=sync.__name__):
         sync.sync_photos()
 
     assert not (tmp_path / "one.jpg").exists()
@@ -124,6 +140,7 @@ def test_sync_removes_partial_file_when_download_fails(
     assert error_record.levelno == logging.ERROR
     assert error_record.exc_info is not None
     assert (
-        "Photo sync completed: 1 remote, 0 downloaded, 0 cached, 1 failed"
+        "Photo sync completed with no changes: "
+        "1 remote, 0 downloaded, 0 cached, 1 failed"
         in caplog.messages
     )

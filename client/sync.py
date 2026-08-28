@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def sync_photos():
-    logger.info("Photo sync started")
+    logger.debug("Photo sync started")
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -55,9 +55,15 @@ def sync_photos():
             if temp_destination.exists():
                 temp_destination.unlink()
 
-    logger.info(
-        "Photo sync completed: %d remote, %d downloaded, "
-        "%d cached, %d failed",
+    completion_message = (
+        "Photo sync completed with changes"
+        if downloaded_count
+        else "Photo sync completed with no changes"
+    )
+    completion_logger = logger.info if downloaded_count else logger.debug
+    completion_logger(
+        "%s: %d remote, %d downloaded, %d cached, %d failed",
+        completion_message,
         len(cloud_files),
         downloaded_count,
         cached_count,
