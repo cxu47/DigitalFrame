@@ -1,96 +1,129 @@
+import logging
+
 from client import sync
 
 
-def test_download_photo(tmp_path, monkeypatch):
+def test_sync_downloads_missing_photo(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(sync, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(
+        sync,
+        "list_photos",
+        lambda folder_id: [{"id": "drive-file-id", "name": "one.jpg"}],
+    )
 
-    class FakeResponse:
-        content = b"fake image data"
+    download_calls = []
 
-        def raise_for_status(self):
-            pass
-
-    def fake_get(url, **kwargs):
-        return FakeResponse()
-
-    monkeypatch.setattr(sync.httpx, "get", fake_get)
-
-    sync.download_photo("test.jpg")
-
-    assert (tmp_path / "test.jpg").exists()
-    assert (tmp_path / "test.jpg").read_bytes() == b"fake image data"
-
-
-def test_sync_downloads_missing_photo(tmp_path, monkeypatch):
-    monkeypatch.setattr(sync, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(sync, "get_photo_names", lambda: ["one.jpg"])
-
-    downloaded = []
-
-    def fake_download(filename):
-        downloaded.append(filename)
-        (tmp_path / filename).write_bytes(b"fake")
+    def fake_download(file_id, destination):
+        download_calls.append((file_id, destination))
+        destination.write_bytes(b"fake image data")
 
     monkeypatch.setattr(sync, "download_photo", fake_download)
 
-    sync.sync_photos()
+    with caplog.at_level(logging.INFO, logger=sync.__name__):
+        sync.sync_photos()
 
-    assert downloaded == ["one.jpg"]
-    assert (tmp_path / "one.jpg").exists()
+    assert download_calls == [
+        ("drive-file-id", tmp_path / "one.jpg.part")
+    ]
+    assert (tmp_path / "one.jpg").read_bytes() == b"fake image data"
+    assert not (tmp_path / "one.jpg.part").exists()
+    assert "Downloading one.jpg" in caplog.messages
+    assert "Downloaded one.jpg" in caplog.messages
+    assert (
+        "Photo sync completed: 1 remote, 1 downloaded, 0 cached, 0 failed"
+        in caplog.messages
+    )
 
 
-def test_sync_skips_cached_photo(tmp_path, monkeypatch):
+def test_sync_skips_cached_photo(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(sync, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(sync, "get_photo_names", lambda: ["one.jpg"])
+    monkeypatch.setattr(
+        sync,
+        "list_photos",
+        lambda folder_id: [{"id": "drive-file-id", "name": "one.jpg"}],
+    )
 
-    (tmp_path / "one.jpg").write_bytes(b"already cached")
-
-    downloaded = []
-
+    cached_photo = tmp_path / "one.jpg"
+    cached_photo.write_bytes(b"already cached")
+    download_calls = []
     monkeypatch.setattr(
         sync,
         "download_photo",
-        lambda filename: downloaded.append(filename),
+        lambda file_id, destination: download_calls.append(
+            (file_id, destination)
+        ),
     )
 
-    sync.sync_photos()
+    with caplog.at_level(logging.DEBUG, logger=sync.__name__):
+        sync.sync_photos()
 
-    assert downloaded == []
+    assert download_calls == []
+    assert cached_photo.read_bytes() == b"already cached"
+    assert "Already cached: one.jpg" in caplog.messages
+    assert (
+        "Photo sync completed: 1 remote, 0 downloaded, 1 cached, 0 failed"
+        in caplog.messages
+    )
 
-def test_sync_keeps_cache_when_server_unavailable(tmp_path, monkeypatch):
+
+def test_sync_keeps_cache_when_listing_fails(
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
     monkeypatch.setattr(sync, "CACHE_DIR", tmp_path)
 
     cached_photo = tmp_path / "cached.jpg"
     cached_photo.write_bytes(b"existing photo")
 
-    def fake_get_photo_names():
-        raise sync.httpx.ConnectError("server unavailable")
+    def fake_list_photos(folder_id):
+        raise ConnectionError("Google Drive unavailable")
 
-    monkeypatch.setattr(sync, "get_photo_names", fake_get_photo_names)
+    monkeypatch.setattr(sync, "list_photos", fake_list_photos)
 
-    sync.sync_photos()
+    with caplog.at_level(logging.ERROR, logger=sync.__name__):
+        sync.sync_photos()
 
-    assert cached_photo.exists()
     assert cached_photo.read_bytes() == b"existing photo"
+    error_record = next(
+        record
+        for record in caplog.records
+        if "failed while listing" in record.getMessage()
+    )
+    assert error_record.exc_info is not None
 
 
-def test_download_photo_uses_temp_file(tmp_path, monkeypatch):
+def test_sync_removes_partial_file_when_download_fails(
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
     monkeypatch.setattr(sync, "CACHE_DIR", tmp_path)
-
-    class FakeResponse:
-        content = b"fake image data"
-
-        def raise_for_status(self):
-            pass
-
     monkeypatch.setattr(
-        sync.httpx,
-        "get",
-        lambda url, **kwargs: FakeResponse(),
+        sync,
+        "list_photos",
+        lambda folder_id: [{"id": "drive-file-id", "name": "one.jpg"}],
     )
 
-    sync.download_photo("test.jpg")
+    def fake_download(file_id, destination):
+        destination.write_bytes(b"partial")
+        raise OSError("download interrupted")
 
-    assert (tmp_path / "test.jpg").exists()
-    assert (tmp_path / "test.jpg").read_bytes() == b"fake image data"
-    assert not (tmp_path / "test.jpg.part").exists()
+    monkeypatch.setattr(sync, "download_photo", fake_download)
+
+    with caplog.at_level(logging.INFO, logger=sync.__name__):
+        sync.sync_photos()
+
+    assert not (tmp_path / "one.jpg").exists()
+    assert not (tmp_path / "one.jpg.part").exists()
+    error_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "Failed to download one.jpg"
+    )
+    assert error_record.levelno == logging.ERROR
+    assert error_record.exc_info is not None
+    assert (
+        "Photo sync completed: 1 remote, 0 downloaded, 0 cached, 1 failed"
+        in caplog.messages
+    )

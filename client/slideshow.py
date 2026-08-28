@@ -1,9 +1,14 @@
-from pathlib import Path
+import logging
+
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
+from .logging_config import configure_logging
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
 register_heif_opener()
+
+
+logger = logging.getLogger(__name__)
 
 def handle_events():
     for event in pygame.event.get():
@@ -41,7 +46,7 @@ def show_first_photo(): #only for testing. later replaced by the following two f
     photos = get_cached_photos()
 
     if not photos:
-        print("No cached photos available.")
+        logger.info("No cached photos available")
         return
 
     pygame.init()
@@ -94,8 +99,12 @@ def display_photo(screen, photo_path):
                 img.mode
             )
 
-    except (pygame.error, FileNotFoundError, OSError):
-        print(f"Skipping unavailable image: {photo_path.name}")
+    except (pygame.error, FileNotFoundError, OSError) as exc:
+        logger.warning(
+            "Skipping unavailable image %s: %s",
+            photo_path.name,
+            exc,
+        )
         return False
 
     screen_width, screen_height = screen.get_size()
@@ -120,6 +129,7 @@ def display_photo(screen, photo_path):
     screen.fill("black")
     screen.blit(image, (x, y))
     pygame.display.flip()
+    logger.debug("Displayed photo: %s", photo_path.name)
     return True
 
 def show_slideshow():
@@ -128,45 +138,59 @@ def show_slideshow():
     screen = pygame.display.set_mode((800, 600))
     pygame.display.set_caption("Digital Frame")
 
+    logger.info("Slideshow started")
     running = True
+    waiting_for_photos = False
 
-    while running:
-        photos = get_cached_photos()
-        if not photos:
-            display_message(
-                screen,
-                "No cached photos available."
-            )
+    try:
+        while running:
+            photos = get_cached_photos()
+            if not photos:
+                if not waiting_for_photos:
+                    logger.info("No cached photos available; waiting")
+                    waiting_for_photos = True
 
-            running = handle_events()
+                display_message(
+                    screen,
+                    "No cached photos available."
+                )
 
-            pygame.time.wait(int(IDLE_SECONDS * 1000))
-            continue
+                running = handle_events()
 
-
-
-        for photo_path in photos:
-            success = display_photo(screen, photo_path)
-            if not success:
+                pygame.time.wait(int(IDLE_SECONDS * 1000))
                 continue
 
-            start_time = pygame.time.get_ticks()
+            if waiting_for_photos:
+                logger.info(
+                    "Cached photos available; resuming slideshow"
+                )
+                waiting_for_photos = False
 
-            while (
-                pygame.time.get_ticks() - start_time
-                < int(DISPLAY_SECONDS * 1000)
-            ):
-                running = handle_events()
+            for photo_path in photos:
+                success = display_photo(screen, photo_path)
+                if not success:
+                    continue
+
+                start_time = pygame.time.get_ticks()
+
+                while (
+                    pygame.time.get_ticks() - start_time
+                    < int(DISPLAY_SECONDS * 1000)
+                ):
+                    running = handle_events()
+
+                    if not running:
+                        break
+
+                    pygame.time.wait(int(IDLE_SECONDS * 1000))
 
                 if not running:
                     break
 
-                pygame.time.wait(int(IDLE_SECONDS * 1000)) 
-
-            if not running:
-                break
-
-    pygame.quit()
+    finally:
+        pygame.quit()
+        logger.info("Slideshow stopped")
 
 if __name__ == "__main__":
+    configure_logging()
     show_slideshow()
