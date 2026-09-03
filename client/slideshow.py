@@ -3,7 +3,7 @@ import logging
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from .logging_config import configure_logging
-from PIL import Image, ImageOps
+from PIL import ExifTags, Image, ImageOps
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
@@ -88,16 +88,73 @@ def show_first_photo(): #only for testing. later replaced by the following two f
     pygame.quit()
 
 def display_photo(screen, photo_path):
+    image = None
+    pixel_buffer = None
+
     try:
         with Image.open(photo_path) as img:
-            img = ImageOps.exif_transpose(img)
-            img = img.convert("RGB")
+            screen_width, screen_height = screen.get_size()
 
-            image = pygame.image.fromstring(
-                img.tobytes(),
-                img.size,
-                img.mode
+            orientation = img.getexif().get(ExifTags.Base.Orientation, 1)
+            swaps_dimensions = orientation in {5, 6, 7, 8}
+            image_width, image_height = img.size
+            if swaps_dimensions:
+                image_width, image_height = image_height, image_width
+
+            scale = min(
+                screen_width / image_width,
+                screen_height / image_height,
             )
+
+            new_size = (
+                max(1, int(image_width * scale)),
+                max(1, int(image_height * scale)),
+            )
+
+            # JPEG decoders can use this hint to avoid decoding more pixels
+            # than the display needs. Other formats safely ignore it.
+            draft_size = (
+                (new_size[1], new_size[0])
+                if swaps_dimensions
+                else new_size
+            )
+            img.draft("RGB", draft_size)
+            ImageOps.exif_transpose(img, in_place=True)
+
+            # Resize before creating the Pygame surface so only the small,
+            # display-sized pixel buffer is copied into Pygame.
+            resized_image = img
+            if scale < 1:
+                img.thumbnail(new_size, Image.Resampling.LANCZOS)
+            elif img.size != new_size:
+                resized_image = img.resize(
+                    new_size,
+                    Image.Resampling.LANCZOS,
+                )
+
+            try:
+                display_image = (
+                    resized_image
+                    if resized_image.mode == "RGB"
+                    else resized_image.convert("RGB")
+                )
+                try:
+                    pixel_buffer = display_image.tobytes()
+                    image = pygame.image.frombytes(
+                        pixel_buffer,
+                        display_image.size,
+                        "RGB",
+                    )
+                finally:
+                    if display_image is not resized_image:
+                        display_image.close()
+            finally:
+                if resized_image is not img:
+                    resized_image.close()
+
+        # frombytes has copied the pixels, so the temporary byte buffer can be
+        # released before the photo remains on screen for DISPLAY_SECONDS.
+        pixel_buffer = None
 
     except (pygame.error, FileNotFoundError, OSError) as exc:
         logger.warning(
@@ -107,29 +164,18 @@ def display_photo(screen, photo_path):
         )
         return False
 
-    screen_width, screen_height = screen.get_size()
     image_width, image_height = image.get_size()
-
-    scale = min(
-        screen_width / image_width,
-        screen_height / image_height,
-    )
-
-    new_width = int(image_width * scale)
-    new_height = int(image_height * scale)
-
-    image = pygame.transform.smoothscale(
-        image,
-        (new_width, new_height),
-    )
-
-    x = (screen_width - new_width) // 2
-    y = (screen_height - new_height) // 2
+    x = (screen_width - image_width) // 2
+    y = (screen_height - image_height) // 2
 
     screen.fill("black")
     screen.blit(image, (x, y))
     pygame.display.flip()
     logger.debug("Displayed photo: %s", photo_path.name)
+
+    # The display surface owns its copied pixels after blit/flip; keeping this
+    # source surface alive would retain the previous photo's buffer.
+    image = None
     return True
 
 def show_slideshow():
