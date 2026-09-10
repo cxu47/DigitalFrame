@@ -14,7 +14,7 @@ IDLE_SECONDS =  float(os.getenv("IDLE_SECONDS"))
 SYNC_INTERVAL = float(os.getenv("SYNC_INTERVAL"))
 
 # logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 
 # google configs (inside client/)
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
