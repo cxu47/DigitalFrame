@@ -1,2 +1,393 @@
+<frozen importlib._bootstrap>:491: RuntimeWarning: Your system is neon capable but pygame was not built with support for it. The performance of some of your blits could be adversely affected. Consider enabling compile time detection with environment variables like PYGAME_DETECT_AVX2=1 if you are compiling without cross compilation.
 pygame 2.6.1 (SDL 2.32.10, Python 3.14.4)
 Hello from the pygame community. https://www.pygame.org/contribute.html
+2026-09-10 17:29:16 INFO [MainThread] __main__: DigitalFrame client starting
+2026-09-10 17:29:16 DEBUG [MainThread] client.sync: Photo sync started
+2026-09-10 17:29:16 DEBUG [MainThread] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:16 DEBUG [MainThread] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:16 DEBUG [MainThread] client.storage.google_drive: Refreshing Google Drive credentials
+2026-09-10 17:29:16 DEBUG [MainThread] urllib3.connectionpool: Starting new HTTPS connection (1): oauth2.googleapis.com:443
+2026-09-10 17:29:17 DEBUG [MainThread] urllib3.connectionpool: https://oauth2.googleapis.com:443 "POST /token HTTP/1.1" 200 None
+2026-09-10 17:29:17 DEBUG [MainThread] client.storage.google_drive: Saved updated Google Drive credentials
+2026-09-10 17:29:17 DEBUG [MainThread] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:17 DEBUG [MainThread] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:24 DEBUG [MainThread] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:24 DEBUG [MainThread] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:24 DEBUG [MainThread] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:24 DEBUG [MainThread] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:24 DEBUG [MainThread] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:24 DEBUG [MainThread] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:24 DEBUG [MainThread] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:24 DEBUG [photo-sync] __main__: Background sync loop started with a 1.0-second interval
+2026-09-10 17:29:24 DEBUG [MainThread] __main__: Background sync thread started
+2026-09-10 17:29:25 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:25 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:25 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:25 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:25 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:26 INFO [MainThread] client.slideshow: Slideshow started
+2026-09-10 17:29:26 DEBUG [MainThread] PIL.Image: Importing PngImagePlugin
+2026-09-10 17:29:26 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IHDR' 16 13
+2026-09-10 17:29:26 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'caBX' 41 29083
+2026-09-10 17:29:26 DEBUG [MainThread] PIL.PngImagePlugin: b'caBX' 41 29083 (unknown)
+2026-09-10 17:29:26 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IDAT' 29136 65536
+2026-09-10 17:29:26 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:26 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:26 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:26 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:26 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:26 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:26 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:27 DEBUG [MainThread] client.slideshow: Displayed photo: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:27 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:27 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:27 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:27 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:27 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:28 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:28 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:28 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:28 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:28 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:28 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:28 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:29 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:29 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:29 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:29 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:29 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:30 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:30 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:30 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:30 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:30 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:30 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:30 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:31 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:31 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:31 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:31 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:32 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Make (271) - type: string (2) Tag Location: 22 - Data Location: 134 - value: b'Apple\x00'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Model (272) - type: string (2) Tag Location: 34 - Data Location: 140 - value: b'iPhone 16e\x00'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Orientation (274) - type: short (3) - value: b'\x00\x01'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: XResolution (282) - type: rational (5) Tag Location: 58 - Data Location: 152 - value: b'\x00\x00\x00H\x00\x00\x00\x01'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: YResolution (283) - type: rational (5) Tag Location: 70 - Data Location: 160 - value: b'\x00\x00\x00H\x00\x00\x00\x01'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: ResolutionUnit (296) - type: short (3) - value: b'\x00\x02'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Software (305) - type: string (2) Tag Location: 94 - Data Location: 168 - value: b'26.6\x00'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: DateTime (306) - type: string (2) Tag Location: 106 - Data Location: 174 - value: b'2026:07:31 15:24:11\x00'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: HostComputer (316) - type: string (2) Tag Location: 118 - Data Location: 194 - value: b'iPhone 16e\x00'
+2026-09-10 17:29:32 DEBUG [MainThread] PIL.TiffImagePlugin: tag: ExifIFD (34665) - type: long (4) - value: b'\x00\x00\x00\xce'
+2026-09-10 17:29:33 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:33 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:33 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:33 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:33 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:33 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:33 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:34 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:34 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:34 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:34 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:34 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:35 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:35 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:35 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:35 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:35 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:35 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:35 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:36 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:36 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:36 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:36 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:36 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:37 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:37 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:37 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:37 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:37 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:37 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:37 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:38 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:38 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:38 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:38 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:38 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:39 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:39 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:39 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:39 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:39 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:39 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:39 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:40 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:40 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:40 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:40 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:40 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:40 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:41 DEBUG [MainThread] client.slideshow: Displayed photo: IMG_2039.HEIC
+2026-09-10 17:29:41 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:41 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:41 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:41 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:41 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:43 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:43 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:43 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:43 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:43 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:43 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:43 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:44 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:44 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:44 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:44 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:44 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:45 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:45 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:45 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:45 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:45 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:45 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:45 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:46 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:46 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:46 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:46 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:46 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.Image: Importing JpegImagePlugin
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Orientation (274) - type: short (3) - value: b'\x00\x01'
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.TiffImagePlugin: tag: XResolution (282) - type: rational (5) Tag Location: 34 - Data Location: 86 - value: b'\x00\x00\x00H\x00\x00\x00\x01'
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.TiffImagePlugin: tag: YResolution (283) - type: rational (5) Tag Location: 46 - Data Location: 94 - value: b'\x00\x00\x00H\x00\x00\x00\x01'
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.TiffImagePlugin: tag: ResolutionUnit (296) - type: short (3) - value: b'\x00\x02'
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.TiffImagePlugin: tag: YCbCrPositioning (531) - type: short (3) - value: b'\x00\x01'
+2026-09-10 17:29:46 DEBUG [MainThread] PIL.TiffImagePlugin: tag: ExifIFD (34665) - type: long (4) - value: b'\x00\x00\x00f'
+2026-09-10 17:29:47 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:47 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:47 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:47 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:47 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:47 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:47 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:47 DEBUG [MainThread] client.slideshow: Displayed photo: IMG_2089.JPG
+2026-09-10 17:29:48 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:48 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:48 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:48 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:48 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:50 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:50 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:50 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:50 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:50 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:50 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:50 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:51 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:51 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:51 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:51 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:51 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:52 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:52 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:52 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:52 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:52 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:52 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:52 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:52 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IHDR' 16 13
+2026-09-10 17:29:52 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'sRGB' 41 1
+2026-09-10 17:29:52 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'gAMA' 54 4
+2026-09-10 17:29:52 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'pHYs' 70 9
+2026-09-10 17:29:52 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IDAT' 91 65445
+2026-09-10 17:29:53 DEBUG [MainThread] client.slideshow: Displayed photo: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:53 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:53 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:53 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:53 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:53 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:54 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:54 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:54 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:54 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:54 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:54 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:54 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:55 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:55 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:55 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:55 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:55 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:56 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:56 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:56 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:56 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:56 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:56 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:56 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:57 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:57 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:57 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:57 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:29:57 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:29:57 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:29:58 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IHDR' 16 13
+2026-09-10 17:29:58 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'sRGB' 41 1
+2026-09-10 17:29:58 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'gAMA' 54 4
+2026-09-10 17:29:58 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'pHYs' 70 9
+2026-09-10 17:29:58 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IDAT' 91 27212
+2026-09-10 17:29:58 DEBUG [MainThread] client.slideshow: Displayed photo: Screenshot 2026-08-24 233313.png
+2026-09-10 17:29:58 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:29:58 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:29:58 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:29:58 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:29:59 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:00 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:00 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:00 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:00 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:00 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:00 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:00 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:01 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:01 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:01 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:01 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:01 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:01 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:02 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:02 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:02 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:02 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:02 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:03 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:03 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:03 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:03 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:03 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:03 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:03 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:03 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IHDR' 16 13
+2026-09-10 17:30:03 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'caBX' 41 29083
+2026-09-10 17:30:03 DEBUG [MainThread] PIL.PngImagePlugin: b'caBX' 41 29083 (unknown)
+2026-09-10 17:30:03 DEBUG [MainThread] PIL.PngImagePlugin: STREAM b'IDAT' 29136 65536
+2026-09-10 17:30:04 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:04 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:04 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:04 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:04 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:04 DEBUG [MainThread] client.slideshow: Displayed photo: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:06 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:06 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:06 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:06 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:06 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:06 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:06 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:07 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:07 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:07 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:07 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:08 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Make (271) - type: string (2) Tag Location: 22 - Data Location: 134 - value: b'Apple\x00'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Model (272) - type: string (2) Tag Location: 34 - Data Location: 140 - value: b'iPhone 16e\x00'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Orientation (274) - type: short (3) - value: b'\x00\x01'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: XResolution (282) - type: rational (5) Tag Location: 58 - Data Location: 152 - value: b'\x00\x00\x00H\x00\x00\x00\x01'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: YResolution (283) - type: rational (5) Tag Location: 70 - Data Location: 160 - value: b'\x00\x00\x00H\x00\x00\x00\x01'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: ResolutionUnit (296) - type: short (3) - value: b'\x00\x02'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: Software (305) - type: string (2) Tag Location: 94 - Data Location: 168 - value: b'26.6\x00'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: DateTime (306) - type: string (2) Tag Location: 106 - Data Location: 174 - value: b'2026:07:31 15:24:11\x00'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: HostComputer (316) - type: string (2) Tag Location: 118 - Data Location: 194 - value: b'iPhone 16e\x00'
+2026-09-10 17:30:10 DEBUG [MainThread] PIL.TiffImagePlugin: tag: ExifIFD (34665) - type: long (4) - value: b'\x00\x00\x00\xce'
+2026-09-10 17:30:10 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:10 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:10 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:10 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:10 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:10 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:10 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:11 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:11 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:11 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:11 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:11 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:12 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:12 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:12 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:12 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:12 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:12 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:12 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:13 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:13 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:13 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:13 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:13 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:14 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:14 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:14 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:14 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:14 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:14 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:14 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:15 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:15 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:15 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:15 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:15 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:16 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:16 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:16 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:16 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:16 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:16 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:16 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:17 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:17 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:17 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:17 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:17 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:18 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:18 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:18 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:18 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:18 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:18 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:18 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:20 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:20 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:20 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:20 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:20 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
+2026-09-10 17:30:22 DEBUG [photo-sync] client.storage.google_drive: Google Drive photo listing returned 5 images
+2026-09-10 17:30:22 DEBUG [photo-sync] client.sync: Already cached: Copy of 32058DCF-882E-4166-B7E6-A5174BAA8627.png
+2026-09-10 17:30:22 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2026-08-24 233313.png
+2026-09-10 17:30:22 DEBUG [photo-sync] client.sync: Already cached: IMG_2039.HEIC
+2026-09-10 17:30:22 DEBUG [photo-sync] client.sync: Already cached: Screenshot 2025-10-08 012137.png
+2026-09-10 17:30:22 DEBUG [photo-sync] client.sync: Already cached: IMG_2089.JPG
+2026-09-10 17:30:22 DEBUG [photo-sync] client.sync: Photo sync completed with no changes: 5 remote, 0 downloaded, 5 cached, 0 failed
+2026-09-10 17:30:22 DEBUG [MainThread] client.slideshow: Displayed photo: IMG_2039.HEIC
+2026-09-10 17:30:23 DEBUG [photo-sync] client.sync: Photo sync started
+2026-09-10 17:30:23 DEBUG [photo-sync] client.storage.google_drive: Requesting Google Drive photo listing
+2026-09-10 17:30:23 DEBUG [photo-sync] client.storage.google_drive: Loading saved Google Drive credentials
+2026-09-10 17:30:23 DEBUG [photo-sync] client.storage.google_drive: Building Google Drive service
+2026-09-10 17:30:23 DEBUG [photo-sync] googleapiclient.discovery: URL being requested: GET https://www.googleapis.com/drive/v3/files?q=%271PCx8gffDxNx9AdDQjKPgpNyXBa74pxM1%27+in+parents+and+trashed+%3D+false&fields=files%28id%2C+name%2C+mimeType%2C+modifiedTime%29&alt=json
