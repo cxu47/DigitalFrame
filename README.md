@@ -14,6 +14,8 @@ Although the application is intentionally simple, it also provides an opportunit
 
 ![DigitalFrame demo](assets/demo.gif)
 
+![DigitalFrame demo](assets/hardware_v1.png)
+
 ## Project Goals
 
 The DigitalFrame client is designed to:
