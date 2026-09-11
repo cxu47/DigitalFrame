@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools==84.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "digitalframe"
+version = "0.1.0"
+description = "A self-updating digital photo frame with Google Drive synchronization"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "google-api-python-client==2.199.0",
+    "google-auth[requests]==2.56.3",
+    "google-auth-oauthlib==1.4.0",
+    "pillow==12.3.0",
+    # Retain the Banana Pi/Armbian compatibility pin from commit 2125050.
+    "pillow_heif==1.4.0",
+    "python-dotenv==1.2.3",
+]
+
+[project.optional-dependencies]
+# Omit on boards that supply their own working Pygame/SDL build; see README.md.
+display = ["pygame==2.6.1"]
+
+[project.scripts]
+digitalframe = "client.cli:main"
+
+[dependency-groups]
+# Existing tooling is retained without changing or running the current tests.
+dev = [
+    "click==8.4.2",
+    "httpx==0.28.1",
+    "pytest==9.1.1",
+]
+
+[tool.setuptools]
+packages = ["client", "client.storage"]
+include-package-data = false

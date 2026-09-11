@@ -101,20 +101,52 @@ The DigitalFrame client is designed to:
 
 DigitalFrame is under active development. The current implementation demonstrates the core workflow of authenticating with cloud storage, synchronizing photos into a local cache, and displaying them as a continuously updating slideshow.
 
-For a fresh desktop Linux installation, run the following from the repository root. Pygame is installed separately so that installing `requirements.txt` on an existing board does not replace its working Pygame/SDL build. The wheel command requires a wheel for your Python version and platform; it is not the recorded ARMv7 board installation procedure.
+### Installation and configuration
+
+DigitalFrame runs natively as the intended Linux user. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and a compatible Python interpreter (declared range: 3.12–3.14). The uv workflow was validated with uv 0.12.13 and Python 3.12.3 on Linux AArch64; the archived ARMv7/Python 3.14 board still needs migration verification. uv manages Python packages; the OS still supplies display drivers, session/device access, and any native SDL/image libraries needed by your chosen build.
+
+Run these commands from the repository root for a **fresh standard display installation**:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m pip install --only-binary=pygame pygame==2.6.1
+uv sync --locked --no-dev --extra display
 cp -n .env.example .env
 ```
 
-For an already configured board, activate its existing environment and retain its working Pygame installation. `pillow_heif` remains pinned to 1.4.0 for the Banana Pi/Armbian compatibility adjustment. The [historical display investigation](logs/README.md) records the board's Pygame/SDL versions and a machine-specific device-selection workaround; the original Pygame build command was not recorded.
+The `display` extra installs Pygame 2.6.1 from the locked source. A compatible wheel or build environment must exist for the selected Python/platform. `pillow_heif` remains pinned to 1.4.0 for the earlier Banana Pi/Armbian compatibility adjustment. The `dev` group is excluded from runtime installation.
 
-Set `GOOGLE_DRIVE_FOLDER_ID` in `.env` and place your Google OAuth client JSON at `client/secrets/google_credentials.json` with the example configuration. Create the configured cache and secrets directories if using different paths. Run `python -m client.main` from the repository root. Initial authorization prints a URL without opening a browser and waits for a callback on port 8080; the authorizing browser must be able to reach that callback (use SSH port forwarding for a remote board). The generated/refreshed token is saved in the secrets directory. Relative cache/secrets paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables take precedence over `.env`. Timing values are seconds; `LOG_LEVEL` defaults to `INFO`.
+For an **existing board with a working Pygame/SDL build**, first validate the migration in a separate checkout/environment. Then use its existing interpreter and retain the separately provisioned Pygame installation. For example, if its base interpreter is `/usr/bin/python3.14`:
 
-The Dockerfile now launches the client and copies only Python source, excluding local photos and credentials from the image. Build with `docker build -t digitalframe .`. At runtime, bind-mount `.env` read-only at `/app/.env`, the cache read/write at `/app/client/cache`, and the secrets directory read/write at `/app/client/secrets` (adjust the destinations for custom paths). Perform initial authorization natively and reuse the generated token in the mounted secrets directory; the unchanged OAuth callback binds to localhost.
+```bash
+uv sync --locked --no-dev --inexact --python /usr/bin/python3.14 --no-python-downloads
+```
 
-Displaying from a container additionally requires the host's display backend, session access, and permissions: X11/Wayland needs the corresponding environment, socket, and authorization; direct KMSDRM needs the appropriate DRM/input devices and terminal/session access. The bundled Pygame wheel may differ from the board's working SDL build. Container builds and physical display output have not been verified in the cleanup environment, where Docker's WSL integration is unavailable; the native board setup remains the reference for the archived case.
+Replace that interpreter path with the one actually used by the board's environment. This command is intended for an environment that already contains the working Pygame build; it does not recreate that build in a fresh environment. Do not enable the `display` extra on this profile. Plain `uv sync` removes undeclared packages, while `--inexact` retains them unless they conflict with declared requirements. [uv synchronization behavior](https://docs.astral.sh/uv/concepts/projects/sync/)
+
+The [historical display investigation](logs/README.md) records the board's interpreter, Pygame/SDL versions, and device-selection workaround. Its original Pygame build command is unknown, so this profile has a documented reproducibility gap: the lockfile alone cannot reproduce the custom graphics stack. Record the build procedure, artifact hash, and interpreter ABI when provisioning another board. A copied laptop `.venv` is not a deployment method.
+
+In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JSON at `client/secrets/google_credentials.json` for the example configuration. Create cache/secrets directories if using custom paths. Relative paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables override `.env`. Timing values are seconds; `LOG_LEVEL` defaults to `INFO`.
+
+### Running the frame
+
+```bash
+uv run --no-sync digitalframe run        # Initial sync, background sync, slideshow
+uv run --no-sync digitalframe slideshow  # Cached photos only; no cloud access
+uv run --no-sync digitalframe sync       # One sync; no display required
+uv run --no-sync digitalframe --help
+```
+
+Pygame must be installed through one of the display profiles for `run` and `slideshow`. Help needs no `.env` or display dependencies; no arguments show help. For a cache-only slideshow, ensure the configured cache directory exists first. Exit the slideshow with Escape or by closing its window.
+
+Initial Drive authorization prints a URL without opening a browser and waits for a localhost callback on port 8080. The authorizing browser must reach that callback; use SSH port forwarding when authorizing a remote board. Tokens are created/refreshed in the configured secrets directory. The `slideshow` command does not initiate authorization.
+
+`--no-sync` keeps normal startup separate from package changes. After installation, `.venv/bin/digitalframe` runs the same commands directly. `python -m client` exposes the same CLI in the selected environment; the existing `python -m client.main`, `python -m client.slideshow`, and `python -m client.sync` entry points still work. Installation is editable from this checkout; keep the checkout available and run from its root. Standalone wheel deployment with relocated configuration/data is not supported by this workflow.
+
+### Maintenance and deployment
+
+`pyproject.toml` declares direct dependencies and profiles; the generated `uv.lock` fixes their resolved versions. `requirements.txt` is no longer maintained. Install development tooling with `uv sync --locked --extra display` on a standard environment, or `uv sync --locked --inexact --python /path/to/board/python --no-python-downloads` on a board with separately provisioned Pygame. The existing tests are outside the scope of this migration.
+
+For an intentional package update, edit the relevant version constraint, run `uv lock --upgrade-package PACKAGE`, review the metadata/lockfile diff, and verify the selected profile before deploying it. Use `uv lock --check` to check metadata/lockfile consistency. Keep the board's `pillow_heif` and Pygame compatibility requirements in mind when changing pins. For an external tool that specifically requires a requirements file, export one from the lockfile rather than maintaining another list; for example, `uv export --locked --no-dev --extra display --no-emit-project --format requirements.txt --output-file /tmp/digitalframe-requirements.txt` exports the standard profile's dependencies. [uv project workflow](https://docs.astral.sh/uv/guides/projects/), [lockfile exports](https://docs.astral.sh/uv/concepts/projects/export/)
+
+To transfer the frame, check out the same repository revision on the new machine, install its OS prerequisites and uv, select a compatible interpreter/display profile, supply local configuration and credentials, and synchronize the lockfile. Validate actual visible output on that machine. A startup service can eventually invoke the absolute path to `.venv/bin/digitalframe run` as the frame user, once its graphical/TTY session access is configured; startup should not resolve or install dependencies.
+
+Docker is no longer the active deployment path. For this single-user frame, native execution keeps display and host-network access straightforward; the earlier Docker configuration remains in Git history. A future local control server can share application/configuration functions without launching another slideshow or requiring containers. Wi-Fi control will need an adapter to the host's network manager and its authorization model. No server or automatic-startup service is introduced by this migration.

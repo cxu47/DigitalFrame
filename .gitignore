@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 .git/
 .pytest_cache/
+# generated packaging artifacts
+build/
+dist/
+*.egg-info/
+*.whl
 # client cache files
 client/cache/*
 !client/cache/.gitkeep

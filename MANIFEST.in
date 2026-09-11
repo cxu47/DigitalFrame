@@ -1,0 +1,8 @@
+prune client/cache
+prune client/secrets
+prune tests
+prune logs
+prune assets
+prune .plans
+exclude .env
+global-exclude *.py[cod] .gitkeep
