@@ -1,0 +1,10 @@
+pygame 2.6.1 (SDL 2.32.10, Python 3.14.4)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+Pygame: 2.6.1
+SDL: (2, 32, 10)
+SDL_VIDEODRIVER=None
+DISPLAY=None
+WAYLAND_DISPLAY=None
+XDG_SESSION_TYPE='tty'
+Actual display driver: KMSDRM
+Screen size: (1920, 1080)

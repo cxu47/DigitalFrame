@@ -1,0 +1,11 @@
+<frozen importlib._bootstrap>:491: RuntimeWarning: Your system is neon capable but pygame was not built with support for it. The performance of some of your blits could be adversely affected. Consider enabling compile time detection with environment variables like PYGAME_DETECT_AVX2=1 if you are compiling without cross compilation.
+pygame 2.6.1 (SDL 2.32.10, Python 3.14.4)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+Pygame: 2.6.1
+SDL: (2, 32, 10)
+SDL_VIDEODRIVER=None
+DISPLAY=None
+WAYLAND_DISPLAY=None
+XDG_SESSION_TYPE='tty'
+Actual display driver: KMSDRM
+Screen size: (800, 600)

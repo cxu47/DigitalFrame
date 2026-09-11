@@ -1,0 +1,73 @@
+Python: /home/chang/DigitalFrame/.venv/bin/python 3.14.4 (main, Jun 18 2026, 14:25:02) [GCC 15.2.0]
+Kernel: Linux 6.18.45-current-sunxi armv7l
+Board: Banana Pi BPI-M2-Zero 
+OS: PRETTY_NAME="Armbian_community 26.11.0-trunk.19 resolute"
+NAME="Ubuntu"
+VERSION_ID="26.04"
+VERSION="26.04 (Resolute Raccoon)"
+VERSION_CODENAME=resolute
+ID=ubuntu
+ID_LIKE=debian
+HOME_URL="https://www.armbian.com"
+SUPPORT_URL="https://forum.armbian.com"
+BUG_REPORT_URL="https://www.armbian.com/bugs"
+PRIVACY_POLICY_URL="https://www.armbian.com"
+UBUNTU_CODENAME=resolute
+LOGO="armbian-logo"
+ARMBIAN_PRETTY_NAME="Armbian_community 26.11.0-trunk.19 resolute"
+Input terminal: /dev/tty1
+SDL_VIDEODRIVER=None
+SDL_RENDER_DRIVER=None
+SDL_KMSDRM_DEVICE_INDEX=None
+SDL_KMSDRM_REQUIRE_DRM_MASTER=None
+PYGAME_FORCE_SCALE=None
+PYGAME_DISPLAY=None
+DISPLAY=None
+WAYLAND_DISPLAY=None
+XDG_SESSION_TYPE='tty'
+Active virtual terminal: tty1
+Framebuffer list: 0 sun4i-drmdrmfb
+1 simpledrmdrmfb
+DRM card0: device=/sys/devices/platform/display-engine/drm/card0, driver=/sys/bus/platform/drivers/sun4i-drm
+Connector card0-HDMI-A-1: status=connected, enabled=enabled, modes=['1280x720', '1280x720', '1280x720', '1280x720', '800x600', '800x600', '720x576', '720x480', '720x480', '720x480', '720x480', '720x480', '640x480', '640x480', '640x480', '640x480', '720x400']
+DRM card1: device=/sys/devices/platform/5e000000.framebuffer/drm/card1, driver=/sys/bus/platform/drivers/simple-framebuffer
+Connector card1-Unknown-1: status=connected, enabled=enabled, modes=['1920x1080']
+DRM card2: device=/sys/devices/platform/soc/1c40000.gpu/drm/card2, driver=/sys/bus/platform/drivers/lima
+Framebuffer fb0: name=sun4i-drmdrmfb, device=/sys/devices/platform/display-engine
+Framebuffer fb1: name=simpledrmdrmfb, device=/sys/devices/platform/5e000000.framebuffer
+<frozen importlib._bootstrap>:491: RuntimeWarning: Your system is neon capable but pygame was not built with support for it. The performance of some of your blits could be adversely affected. Consider enabling compile time detection with environment variables like PYGAME_DETECT_AVX2=1 if you are compiling without cross compilation.
+pygame 2.6.1 (SDL 2.32.10, Python 3.14.4)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+Pygame: 2.6.1 from /home/chang/DigitalFrame/.venv/lib/python3.14/site-packages/pygame/__init__.py
+SDL: (2, 32, 10)
+Display driver: KMSDRM
+Desktop sizes: [(1920, 1080)]
+Surface: (800, 600) Window: (1920, 1080)
+Window-system info: {'window': 5, 'display': <capsule object "display" at 0xb4926a28>, 'surface': <capsule object "surface" at 0xb6773fa0>, 'shell_surface': <capsule object "shell_surface" at 0xb63f20f0>}
+Open graphics device: fd=10, path=/dev/dri/card1
+Open graphics device: fd=11, path=/dev/dri/card1
+Open graphics device: fd=12, path=/dev/dri/renderD128
+Open graphics device: fd=13, path=/dev/dri/renderD128
+Open graphics device: fd=14, path=/dev/dri/renderD128
+Open graphics device: fd=5, path=/dev/dri/card1
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/libEGL.so.1.1.0
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/libEGL_mesa.so.0.0.0
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/libSDL2_image-2.0.so.0.800.8
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/libSDL2_mixer-2.0.so.0.800.1
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/libSDL2_ttf-2.0.so.0.2400.0
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/libgbm.so.1.0.0
+Loaded graphics library: /usr/lib/arm-linux-gnueabihf/sdl2-classic/libSDL2-2.0.so.0.3200.10
+First flip returned; surface pixel: (255, 0, 255, 255)
+Window active: True
+Active virtual terminal: tty1
+Framebuffer list: 0 sun4i-drmdrmfb
+1 simpledrmdrmfb
+DRM card0: device=/sys/devices/platform/display-engine/drm/card0, driver=/sys/bus/platform/drivers/sun4i-drm
+Connector card0-HDMI-A-1: status=connected, enabled=enabled, modes=['1280x720', '1280x720', '1280x720', '1280x720', '800x600', '800x600', '720x576', '720x480', '720x480', '720x480', '720x480', '720x480', '640x480', '640x480', '640x480', '640x480', '720x400']
+DRM card1: device=/sys/devices/platform/5e000000.framebuffer/drm/card1, driver=/sys/bus/platform/drivers/simple-framebuffer
+Connector card1-Unknown-1: status=connected, enabled=enabled, modes=['1920x1080']
+DRM card2: device=/sys/devices/platform/soc/1c40000.gpu/drm/card2, driver=/sys/bus/platform/drivers/lima
+Framebuffer fb0: name=sun4i-drmdrmfb, device=/sys/devices/platform/display-engine
+Framebuffer fb1: name=simpledrmdrmfb, device=/sys/devices/platform/5e000000.framebuffer
+Test loop finished; completed flips: 170
+Pygame shut down
