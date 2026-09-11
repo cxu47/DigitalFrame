@@ -32,7 +32,7 @@ uv addresses Python dependency installation and locking, not the entire machine 
 - [x] Add `pyproject.toml` for project metadata, Python compatibility, direct dependencies, development tooling, packaging, and the CLI entry point. Generate `uv.lock` for version control; never edit the lockfile manually.
 - [x] Initially target Python `>=3.12,<3.15`, reflecting the current local 3.12 and archived board 3.14 environments. Treat this as a proposed compatibility range to verify, not a claim that all versions/platforms have been tested. Avoid a repository-wide `.python-version` that silently replaces the board's working interpreter.
 - [x] On the board, select its existing interpreter explicitly and disable automatic Python downloads. Check uv's own platform support separately from Python and graphics-wheel availability. [Python selection](https://docs.astral.sh/uv/concepts/python-versions/), [uv platform support](https://docs.astral.sh/uv/reference/policies/platforms/)
-- [x] Declare the current direct runtime dependencies: `google-api-python-client`, `google-auth[requests]`, `google-auth-oauthlib`, `pillow`, `pillow_heif`, and `python-dotenv`. Handle Pygame using the display profiles below. Verify the list against active imports during implementation.
+- [x] Declare the current direct runtime dependencies: `google-api-python-client`, `google-auth[requests]`, `google-auth-oauthlib`, `pillow`, `pillow_heif`, `python-dotenv`, and `typer`. Handle Pygame using the display profiles below. Verify the list against active imports during implementation.
 - [x] Seed the initial resolution with the existing pins as migration constraints, then review the resulting lockfile before removing temporary constraints. Keep `pillow_heif==1.4.0` and the current direct-package versions initially; do not combine migration with a general upgrade. Transitive packages belong in the lockfile rather than a copied list of application dependencies. [uv migration guidance](https://docs.astral.sh/uv/guides/migration/pip-to-project/)
 - [x] Move existing pytest and retained HTTP/CLI tooling into a `dev` dependency group, preserving its pins without inspecting or changing tests. Record any unavoidable resolution changes. Runtime installation will exclude this group. [Dependency groups](https://docs.astral.sh/uv/concepts/projects/dependencies/)
 - [x] Remove the hand-maintained `requirements.txt` once the uv workflow works. No current non-uv consumer has been identified beyond the Dockerfile being retired. If a concrete consumer remains, generate its requirements from `uv.lock` with `uv export` and document the selected dependency profile; never maintain two independent dependency lists.
@@ -72,7 +72,7 @@ The second sequence requires Pygame to have already been provisioned in that env
 
 ## 3. Add a small CLI and preserve the current package layout
 
-Use standard-library `argparse`; this interface does not need another CLI dependency. Package the existing `client/` directory with `setuptools.build_meta` and explicit package selection for `client` and `client.storage`. Add `client/storage/__init__.py` so both packages are explicit. Exclude cache, secrets, logs, tests, and the demo from build artifacts.
+Use Typer, as requested in the follow-up, with a runtime dependency pinned in `pyproject.toml` and `uv.lock`. Keep command functions small and application imports lazy. Package the existing `client/` directory with `setuptools.build_meta` and explicit package selection for `client` and `client.storage`. Add `client/storage/__init__.py` so both packages are explicit. Exclude cache, secrets, logs, tests, and the demo from build artifacts.
 
 Define `[project.scripts]` with `digitalframe = "client.cli:main"`. Console entry points require an installed project/build configuration. Verify editable checkout installation; independently distributed wheels and relocatable data directories are not goals of this migration. [uv entry points and packaging](https://docs.astral.sh/uv/concepts/projects/config/)
 
@@ -158,7 +158,7 @@ Implemented on `feature/repository-cleanup-and-display-history` at the user's re
 
 ### Delivered changes
 
-- Added `pyproject.toml` with six direct runtime dependencies, a `display` extra, a separate `dev` group for existing tooling, explicit packaging of `client` and `client.storage`, and the `digitalframe` console command. Python compatibility is declared as `>=3.12,<3.15`; only Python 3.12.3 was exercised locally.
+- Added `pyproject.toml` with the original six direct runtime dependencies (plus Typer in the follow-up below), a `display` extra, a separate `dev` group for existing tooling, explicit packaging of `client` and `client.storage`, and the `digitalframe` console command. Python compatibility is declared as `>=3.12,<3.15`; only Python 3.12.3 was exercised locally.
 - Generated `uv.lock` with uv 0.12.13, using temporary constraints from the old requirements file. Removed those constraints after seeding the lock. All 37 original package pins remain in the generated lockfile. Additional entries are DigitalFrame itself, Pygame 2.6.1, and Colorama for platform-specific dependencies. The new build backend is pinned separately to setuptools 84.0.0.
 - Added `client/cli.py`, `client/__main__.py`, and `client/storage/__init__.py`. Commands are `run`, `slideshow`, and `sync`; no arguments show help. Display commands explain a missing Pygame installation. Lazy imports keep help free of configuration/dependency initialization and sync free of display imports.
 - Added `MANIFEST.in` beyond the initially listed files because excluding package data from wheels alone does not cover source distributions. Both formats explicitly exclude local data, existing tests, and historical files. Updated `.gitignore` for packaging output and local wheel artifacts.
@@ -183,3 +183,12 @@ Implemented on `feature/repository-cleanup-and-display-history` at the user's re
 - [ ] Exercise live Google OAuth/token refresh and remote synchronization with temporary cache data on the deployment. Local validation used synthetic remote data and did not access private credentials.
 
 No control server, Wi-Fi integration, auto-start service, current-test-suite refactor, or standalone wheel deployment was added. These remain separate work.
+
+
+### Typer follow-up
+
+At the user's request, replaced the argparse CLI with Typer 0.27.2. Each subcommand has a typed command function and keeps its application imports local. The existing console/module entry points, no-argument help success status, missing-Pygame message, and `run`/`slideshow`/`sync` behavior are retained. Shell-completion installation options are disabled to keep the existing command surface; standard Python exception reporting remains enabled.
+
+Typer is a runtime dependency. The lockfile adds Typer, annotated-doc, Rich, markdown-it-py, mdurl, and shellingham; existing package versions are unchanged. Pygments and typing-extensions, already in the lockfile, now also serve runtime CLI dependencies. Existing Click tooling remains in the dev group; this Typer version vendors its own Click implementation. [Typer release notes](https://typer.tiangolo.com/release-notes/)
+
+Typer validation passed in isolated base and display environments: installed console/module help, no-argument success, invalid-command status, missing-Pygame guidance, sync with display imports blocked, and both display commands with a dummy SDL backend and simulated Drive. `uv lock --check` and `uv pip check` passed; all previously locked package versions remain unchanged. Existing tests and private local data were not used.

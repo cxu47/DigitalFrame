@@ -128,6 +128,8 @@ In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JS
 
 ### Running the frame
 
+The Typer CLI provides these commands after installation:
+
 ```bash
 uv run --no-sync digitalframe run        # Initial sync, background sync, slideshow
 uv run --no-sync digitalframe slideshow  # Cached photos only; no cloud access

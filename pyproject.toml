@@ -16,6 +16,7 @@ dependencies = [
     # Retain the Banana Pi/Armbian compatibility pin from commit 2125050.
     "pillow_heif==1.4.0",
     "python-dotenv==1.2.3",
+    "typer==0.27.2",
 ]
 
 [project.optional-dependencies]
