@@ -14,7 +14,7 @@ Although the application is intentionally simple, it also provides an opportunit
 
 ![DigitalFrame demo](assets/demo.gif)
 
-![DigitalFrame demo](assets/hardware_v1.png)
+<img src="assets/hardware_v1.png" alt="DigitalFrame demo" width="80%">
 
 ## Project Goals
 
