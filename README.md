@@ -93,8 +93,8 @@ The DigitalFrame client is designed to:
 
 ### Phase 4 - Hardware Deployment
 
-- [ ] Deploy the client on a Raspberry Pi-style device
-- [ ] Connect and configure a portable display
+- [x] Deploy the client on a Raspberry Pi-style device
+- [x] Connect and configure a portable display
 - [ ] Configure automatic startup after reboot
 - [ ] Test unattended synchronization and recovery
 - [ ] Assemble the components into a standalone frame enclosure
