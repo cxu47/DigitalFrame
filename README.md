@@ -147,7 +147,21 @@ Initial Drive authorization prints a URL without opening a browser and waits for
 
 ### Maintenance and deployment
 
-`pyproject.toml` declares direct dependencies and profiles; the generated `uv.lock` fixes their resolved versions. `requirements.txt` is no longer maintained. Install development tooling with `uv sync --locked --extra display` on a standard environment, or `uv sync --locked --inexact --python /path/to/board/python --no-python-downloads` on a board with separately provisioned Pygame. The existing tests are outside the scope of this migration.
+`pyproject.toml` declares direct dependencies and profiles; the generated `uv.lock` fixes their resolved versions. `requirements.txt` is no longer maintained. Install development tooling with `uv sync --locked --extra display` on a standard environment, or `uv sync --locked --inexact --python /path/to/board/python --no-python-downloads` on a board with separately provisioned Pygame.
+
+### Automated tests
+
+After installing development tooling and Pygame, run from the repository root:
+
+```bash
+uv run --no-sync python -m pytest -q
+```
+
+The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real image rendering (including HEIC and EXIF rotation), slideshow waiting/cycling/exit, CLI commands, and background sync startup. It uses temporary cache/token files, mocked cloud services, and SDL's dummy video/audio drivers. No `.env`, Google account, network access, or physical display is needed.
+
+Tests reflect the current filename-based cache behavior: existing files are retained, duplicate names are skipped, and remote deletions do not delete cached photos. Live Google OAuth/connectivity and visible output on the target board remain manual checks; these tests do not verify the hardware graphics stack.
+
+### Updating and transferring the installation
 
 For an intentional package update, edit the relevant version constraint, run `uv lock --upgrade-package PACKAGE`, review the metadata/lockfile diff, and verify the selected profile before deploying it. Use `uv lock --check` to check metadata/lockfile consistency. Keep the board's `pillow_heif` and Pygame compatibility requirements in mind when changing pins. For an external tool that specifically requires a requirements file, export one from the lockfile rather than maintaining another list; for example, `uv export --locked --no-dev --extra display --no-emit-project --format requirements.txt --output-file /tmp/digitalframe-requirements.txt` exports the standard profile's dependencies. [uv project workflow](https://docs.astral.sh/uv/guides/projects/), [lockfile exports](https://docs.astral.sh/uv/concepts/projects/export/)
 

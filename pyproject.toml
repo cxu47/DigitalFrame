@@ -27,7 +27,7 @@ display = ["pygame==2.6.1"]
 digitalframe = "client.cli:main"
 
 [dependency-groups]
-# Existing tooling is retained without changing or running the current tests.
+# Tooling for the practical, offline test suite.
 dev = [
     "click==8.4.2",
     "httpx==0.28.1",
@@ -37,3 +37,6 @@ dev = [
 [tool.setuptools]
 packages = ["client", "client.storage"]
 include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
