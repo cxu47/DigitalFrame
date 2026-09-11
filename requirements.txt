@@ -1,12 +1,12 @@
-annotated-doc==0.0.5
-annotated-types==0.8.0
+# Client dependencies and retained development tooling. Existing pins are kept.
+# Pygame is installed separately: preserve the board's working SDL build.
+# See README.md for fresh desktop/container installations.
 anyio==4.14.2
 certifi==2026.7.22
 cffi==2.1.1
 charset-normalizer==3.5.1
 click==8.4.2
 cryptography==50.0.0
-fastapi==0.141.1
 google-api-core==2.34.0
 google-api-python-client==2.199.0
 google-auth==2.56.3
@@ -22,6 +22,7 @@ iniconfig==2.3.0
 oauthlib==3.3.1
 packaging==26.3
 pillow==12.3.0
+# Kept at 1.4.0 for Banana Pi/Armbian compatibility (commit 2125050).
 pillow_heif==1.4.0
 pluggy==1.6.0
 proto-plus==1.28.3
@@ -29,19 +30,12 @@ protobuf==7.36.0
 pyasn1==0.6.4
 pyasn1_modules==0.4.2
 pycparser==3.0
-pydantic==2.13.4
-pydantic_core==2.46.4
-# pygame==2.6.1
 Pygments==2.21.0
 pyparsing==3.3.2
 pytest==9.1.1
 python-dotenv==1.2.3
-python-multipart==0.0.32
 requests==2.34.2
 requests-oauthlib==2.0.0
-starlette==1.6.0
-typing-inspection==0.4.4
 typing_extensions==4.16.0
 uritemplate==4.2.0
 urllib3==2.7.0
-uvicorn==0.52.4

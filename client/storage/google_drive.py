@@ -36,7 +36,6 @@ def get_drive_service():
                 GOOGLE_CREDENTIALS_FILE,
                 GOOGLE_SCOPES,
             )
-#            creds = flow.run_local_server(port=0)
             creds = flow.run_local_server(port=8080, open_browser=False)
 
         GOOGLE_TOKEN_FILE.write_text(creds.to_json())

@@ -34,6 +34,7 @@ The DigitalFrame client is designed to:
 - Local photo caching
 - Temporary download files to prevent incomplete images from being displayed
 - Continuous slideshow using Pygame and Pillow
+- Configurable image display duration through `DISPLAY_SECONDS`
 - Automatic EXIF orientation correction
 - Graceful handling of missing or invalid cached images
 - Waiting screen when no cached photos are available
@@ -41,15 +42,14 @@ The DigitalFrame client is designed to:
 ## Important Limitations
 
 - Cached files are currently identified by filename rather than file content.
-- If two remote files have the same name, the newer download may replace the existing cached file.
+- If two remote files have the same name, synchronization skips later files once that filename exists in the cache. Updated remote content under an existing filename is also skipped.
 - Remote deletion reconciliation is not yet implemented. Removing a photo from the cloud does not currently remove its cached copy automatically.
 - The project is currently a prototype and has not undergone a complete security review.
-- Connection to google drive is using google-api-python-client service and has automatic time out 60 sec
+- Google Drive requests use the Google API client's transport timeout behavior; the application does not configure its own request timeout.
 
 ## Potential Upgrades
 
 - Randomized slideshow order
-- Configurable image display duration
 - Collage layouts
 - Encrypted local storage
 - Improved authentication and security protocols
@@ -100,3 +100,21 @@ The DigitalFrame client is designed to:
 ## Project Status
 
 DigitalFrame is under active development. The current implementation demonstrates the core workflow of authenticating with cloud storage, synchronizing photos into a local cache, and displaying them as a continuously updating slideshow.
+
+For a fresh desktop Linux installation, run the following from the repository root. Pygame is installed separately so that installing `requirements.txt` on an existing board does not replace its working Pygame/SDL build. The wheel command requires a wheel for your Python version and platform; it is not the recorded ARMv7 board installation procedure.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m pip install --only-binary=pygame pygame==2.6.1
+cp -n .env.example .env
+```
+
+For an already configured board, activate its existing environment and retain its working Pygame installation. `pillow_heif` remains pinned to 1.4.0 for the Banana Pi/Armbian compatibility adjustment. The [historical display investigation](logs/README.md) records the board's Pygame/SDL versions and a machine-specific device-selection workaround; the original Pygame build command was not recorded.
+
+Set `GOOGLE_DRIVE_FOLDER_ID` in `.env` and place your Google OAuth client JSON at `client/secrets/google_credentials.json` with the example configuration. Create the configured cache and secrets directories if using different paths. Run `python -m client.main` from the repository root. Initial authorization prints a URL without opening a browser and waits for a callback on port 8080; the authorizing browser must be able to reach that callback (use SSH port forwarding for a remote board). The generated/refreshed token is saved in the secrets directory. Relative cache/secrets paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables take precedence over `.env`. Timing values are seconds; `LOG_LEVEL` defaults to `INFO`.
+
+The Dockerfile now launches the client and copies only Python source, excluding local photos and credentials from the image. Build with `docker build -t digitalframe .`. At runtime, bind-mount `.env` read-only at `/app/.env`, the cache read/write at `/app/client/cache`, and the secrets directory read/write at `/app/client/secrets` (adjust the destinations for custom paths). Perform initial authorization natively and reuse the generated token in the mounted secrets directory; the unchanged OAuth callback binds to localhost.
+
+Displaying from a container additionally requires the host's display backend, session access, and permissions: X11/Wayland needs the corresponding environment, socket, and authorization; direct KMSDRM needs the appropriate DRM/input devices and terminal/session access. The bundled Pygame wheel may differ from the board's working SDL build. Container builds and physical display output have not been verified in the cleanup environment, where Docker's WSL integration is unavailable; the native board setup remains the reference for the archived case.
