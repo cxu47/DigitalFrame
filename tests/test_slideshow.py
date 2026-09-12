@@ -40,6 +40,56 @@ def test_phone_exif_orientation_is_applied_before_fitting(app, screen, tmp_path)
     assert screen.get_at((55, 30))[:3] == (0, 0, 0)
 
 
+@pytest.mark.parametrize("display_size,photo_size,expected_size", [
+    ((160, 90), (200, 100), (160, 80)),
+    ((160, 90), (100, 200), (45, 90)),
+    ((160, 90), (20, 20), (90, 90)),
+    ((120, 90), (200, 100), (120, 60)),
+    ((90, 160), (200, 100), (90, 45)),
+    ((90, 160), (100, 200), (80, 160)),
+    ((160, 90), (320, 180), (160, 90)),
+])
+def test_photo_proportions_on_different_displays(
+    app, screen, tmp_path, display_size, photo_size, expected_size,
+):
+    pygame = app.slideshow.pygame
+    surface = pygame.Surface(display_size)
+    surface.fill("green")  # Old content must also be cleared from the bars.
+    photo = tmp_path / "photo.png"
+    with Image.new("RGB", photo_size, "red") as source:
+        source.save(photo)
+
+    assert app.slideshow.display_photo(surface, photo)
+    expected = pygame.Rect((0, 0), expected_size)
+    expected.topleft = (
+        (display_size[0] - expected.width) // 2,
+        (display_size[1] - expected.height) // 2,
+    )
+    for x in range(display_size[0]):
+        for y in range(display_size[1]):
+            color = (255, 0, 0) if expected.collidepoint(x, y) else (0, 0, 0)
+            assert surface.get_at((x, y))[:3] == color
+
+
+def test_slideshow_uses_current_display_resolution_fullscreen(app, monkeypatch):
+    slideshow = app.slideshow
+    pygame = slideshow.pygame
+    pygame.init()
+    desktop_size = pygame.display.get_desktop_sizes()[0]
+    observed = []
+
+    def message(screen, text):
+        observed.append((screen.get_size(), bool(screen.get_flags() & pygame.FULLSCREEN)))
+
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [])
+    monkeypatch.setattr(slideshow, "display_message", message)
+    monkeypatch.setattr(slideshow, "handle_events", lambda: False)
+    slideshow.show_slideshow()
+
+    assert observed == [(desktop_size, True)]
+    assert not pygame.get_init()
+
+
 def test_cache_selection_excludes_partial_files_and_directories(app):
     app.cache.mkdir()
     for name in ("b.PNG", "a.jpg", "c.heif", "photo.jpg.part", "notes.txt"):
@@ -181,7 +231,7 @@ def test_update_while_cache_empty_applies_to_first_photo(app, monkeypatch):
 
 
 def test_display_initialization_error_releases_pygame(app, monkeypatch):
-    def fail(size):
+    def fail(size, flags):
         raise app.slideshow.pygame.error("display unavailable")
 
     monkeypatch.setattr(app.slideshow.pygame.display, "set_mode", fail)

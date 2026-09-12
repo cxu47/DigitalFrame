@@ -38,6 +38,7 @@ The DigitalFrame client is designed to:
 - Continuous slideshow using Pygame and Pillow
 - Configurable image display duration through `DISPLAY_SECONDS` and a plain HTML control panel on the local Wi-Fi
 - Automatic EXIF orientation correction
+- Fullscreen display at the current screen resolution, with proportional photo scaling and centered black bars
 - Graceful handling of missing or invalid cached images
 - Waiting screen when no cached photos are available
 
@@ -134,6 +135,8 @@ uv run --no-sync digitalframe --help
 ```
 
 The unified installation supplies Pygame and the control server for `run` and `slideshow`. Help needs no `.env` or display dependencies; no arguments show help. For a cache-only slideshow, ensure the configured cache directory exists first. Exit the slideshow with Escape or by closing its window.
+
+At each startup, the slideshow automatically uses the selected display's current resolution in fullscreen, following [Pygame's display sizing behavior](https://www.pygame.org/docs/ref/display.html#pygame.display.set_mode). It reads the resolution through the OS/SDL display backend; no screen dimensions or aspect ratio need to be configured in the app. Photos keep their original aspect ratio after EXIF orientation correction and fit entirely on screen, with black bars on the sides or top and bottom as needed. For example, a 4:3 photo on a 1280×720 display occupies 960×720 pixels with 160-pixel bars on each side; this is an example, not a fixed output size. The startup log reports the display backend, rendering surface size, and window size. Restart the app after switching HDMI displays or changing the OS display mode. If photos still appear stretched, check that the OS display resolution matches the panel's aspect ratio and that the monitor's own scaling setting preserves proportions.
 
 Initial Drive authorization prints a URL without opening a browser and waits for a localhost callback on port 8080. The authorizing browser must reach that callback; use SSH port forwarding when authorizing a remote board. Tokens are created/refreshed in the configured secrets directory. The `slideshow` command does not initiate authorization.
 

@@ -145,7 +145,16 @@ def show_slideshow(settings=None, *, check_running=lambda: None,
     waiting_for_photos = False
 
     try:
-        screen = pygame.display.set_mode((800, 600))
+        # Use the selected display's current resolution. A fixed 4:3 mode can
+        # be stretched by the display to widescreen even when photos are fitted
+        # proportionally within the Pygame surface.
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        logger.info(
+            "Display initialized: backend=%s, surface=%s, window=%s",
+            pygame.display.get_driver(),
+            screen.get_size(),
+            pygame.display.get_window_size(),
+        )
         pygame.display.set_caption("Digital Frame")
         screen.fill("black")
         pygame.display.flip()
