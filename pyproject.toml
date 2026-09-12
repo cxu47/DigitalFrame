@@ -16,12 +16,13 @@ dependencies = [
     # Retain the Banana Pi/Armbian compatibility pin from commit 2125050.
     "pillow_heif==1.4.0",
     "python-dotenv==1.2.3",
+    "pygame==2.6.1",
     "typer==0.27.2",
+    "fastapi==0.141.1",
+    "uvicorn==0.52.4",
+    "python-multipart==0.0.32",
+    "starlette==1.6.0",
 ]
-
-[project.optional-dependencies]
-# Omit on boards that supply their own working Pygame/SDL build; see README.md.
-display = ["pygame==2.6.1"]
 
 [project.scripts]
 digitalframe = "client.cli:main"
@@ -35,8 +36,11 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["client", "client.storage"]
+packages = ["client", "client.storage", "client.control"]
 include-package-data = false
+
+[tool.setuptools.package-data]
+"client.control" = ["templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

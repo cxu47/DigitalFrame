@@ -3,7 +3,7 @@ import threading
 import time
 
 from .sync import sync_photos
-from .slideshow import show_slideshow
+from .runtime import run_display
 from .config import SYNC_INTERVAL
 from .logging_config import configure_logging
 
@@ -22,10 +22,7 @@ def sync_loop():
         sync_photos()
 
 
-def main():
-    configure_logging()
-    logger.info("DigitalFrame client starting")
-
+def start_sync():
     sync_photos()
 
     sync_thread = threading.Thread(
@@ -36,8 +33,12 @@ def main():
     sync_thread.start()
     logger.debug("Background sync thread started")
 
+
+def main():
+    configure_logging()
+    logger.info("DigitalFrame client starting")
     try:
-        show_slideshow()
+        run_display(before_display=start_sync)
     finally:
         logger.info("DigitalFrame client stopped")
 

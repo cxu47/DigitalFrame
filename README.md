@@ -36,7 +36,7 @@ The DigitalFrame client is designed to:
 - Local photo caching
 - Temporary download files to prevent incomplete images from being displayed
 - Continuous slideshow using Pygame and Pillow
-- Configurable image display duration through `DISPLAY_SECONDS`
+- Configurable image display duration through `DISPLAY_SECONDS` and a plain HTML control panel on the local Wi-Fi
 - Automatic EXIF orientation correction
 - Graceful handling of missing or invalid cached images
 - Waiting screen when no cached photos are available
@@ -110,44 +110,52 @@ DigitalFrame runs natively as the intended Linux user. Install [uv](https://docs
 Run these commands from the repository root for a **fresh standard display installation**:
 
 ```bash
-uv sync --locked --no-dev --extra display
+uv sync --locked --no-dev
 cp -n .env.example .env
 ```
 
-The `display` extra installs Pygame 2.6.1 from the locked source. A compatible wheel or build environment must exist for the selected Python/platform. `pillow_heif` remains pinned to 1.4.0 for the earlier Banana Pi/Armbian compatibility adjustment. The `dev` group is excluded from runtime installation.
+This installs the base application, Pygame 2.6.1, FastAPI, Uvicorn, and form handling together in one uv environment. A compatible wheel or build environment must exist for the selected Python/platform. `pillow_heif` remains pinned to 1.4.0 for the earlier Banana Pi/Armbian compatibility adjustment. The `dev` group is excluded from runtime installation.
 
-For an **existing board with a working Pygame/SDL build**, first validate the migration in a separate checkout/environment. Then use its existing interpreter and retain the separately provisioned Pygame installation. For example, if its base interpreter is `/usr/bin/python3.14`:
+For an **existing board with a working custom Pygame/SDL build**, validate this unified installation in a separate checkout/environment before migrating the working frame. The [historical display investigation](logs/README.md) records the board's interpreter, Pygame/SDL versions, and device-selection workaround, but its original Pygame build command is unknown. The normal locked package has not yet been verified on that ARMv7/Python 3.14 board.
 
-```bash
-uv sync --locked --no-dev --inexact --python /usr/bin/python3.14 --no-python-downloads
-```
+If the board needs a custom wheel, build or obtain one for its interpreter ABI and platform, record the build procedure and artifact hash, and declare a platform-specific Pygame source in `pyproject.toml` before regenerating `uv.lock`. This source must resolve reproducibly on a fresh board. The old `--inexact` approach does not establish that the now-declared Pygame dependency uses the required custom graphics stack. Keep the existing installation until visible output is verified. OS graphics libraries remain system prerequisites, and a copied laptop `.venv` is not a deployment method. [uv package sources](https://docs.astral.sh/uv/concepts/projects/dependencies/)
 
-Replace that interpreter path with the one actually used by the board's environment. This command is intended for an environment that already contains the working Pygame build; it does not recreate that build in a fresh environment. Do not enable the `display` extra on this profile. Plain `uv sync` removes undeclared packages, while `--inexact` retains them unless they conflict with declared requirements. [uv synchronization behavior](https://docs.astral.sh/uv/concepts/projects/sync/)
-
-The [historical display investigation](logs/README.md) records the board's interpreter, Pygame/SDL versions, and device-selection workaround. Its original Pygame build command is unknown, so this profile has a documented reproducibility gap: the lockfile alone cannot reproduce the custom graphics stack. Record the build procedure, artifact hash, and interpreter ABI when provisioning another board. A copied laptop `.venv` is not a deployment method.
-
-In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JSON at `client/secrets/google_credentials.json` for the example configuration. Create cache/secrets directories if using custom paths. Relative paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables override `.env`. Timing values are seconds; `LOG_LEVEL` defaults to `INFO`.
+In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JSON at `client/secrets/google_credentials.json` for the example configuration. Create cache/secrets directories if using custom paths. Relative paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables override `.env`. Timing values are seconds; `DISPLAY_SECONDS` must be a positive integer (for example `5`, not `5.0`). `IDLE_SECONDS` and `SYNC_INTERVAL` still accept decimals. `LOG_LEVEL` defaults to `INFO`.
 
 ### Running the frame
 
 The Typer CLI provides these commands after installation:
 
 ```bash
-uv run --no-sync digitalframe run        # Initial sync, background sync, slideshow
-uv run --no-sync digitalframe slideshow  # Cached photos only; no cloud access
+uv run --no-sync digitalframe run        # Sync + slideshow + Wi-Fi control panel
+uv run --no-sync digitalframe slideshow  # Cached slideshow + panel; no cloud access
 uv run --no-sync digitalframe sync       # One sync; no display required
 uv run --no-sync digitalframe --help
 ```
 
-Pygame must be installed through one of the display profiles for `run` and `slideshow`. Help needs no `.env` or display dependencies; no arguments show help. For a cache-only slideshow, ensure the configured cache directory exists first. Exit the slideshow with Escape or by closing its window.
+The unified installation supplies Pygame and the control server for `run` and `slideshow`. Help needs no `.env` or display dependencies; no arguments show help. For a cache-only slideshow, ensure the configured cache directory exists first. Exit the slideshow with Escape or by closing its window.
 
 Initial Drive authorization prints a URL without opening a browser and waits for a localhost callback on port 8080. The authorizing browser must reach that callback; use SSH port forwarding when authorizing a remote board. Tokens are created/refreshed in the configured secrets directory. The `slideshow` command does not initiate authorization.
 
 `--no-sync` keeps normal startup separate from package changes. After installation, `.venv/bin/digitalframe` runs the same commands directly. `python -m client` exposes the same CLI in the selected environment; the existing `python -m client.main`, `python -m client.slideshow`, and `python -m client.sync` entry points still work. Installation is editable from this checkout; keep the checkout available and run from its root. Standalone wheel deployment with relocated configuration/data is not supported by this workflow.
 
+### Control the frame from another device
+
+Assume the frame and your phone, tablet, or computer are already connected to the same Wi-Fi, with device-to-device traffic allowed. When `run` or `slideshow` starts, the frame detects its network address and logs the browser URL, for example **`http://192.168.1.42:8000`**. Open the displayed URL on the other device. `CONTROL_HOST` defaults to `0.0.0.0` (listen on network interfaces), and `CONTROL_PORT` defaults to `8000`; the browser uses the actual frame IP, not `0.0.0.0` or the other device's `localhost`.
+
+The URL also appears at the **top-left of the slideshow for 30 seconds**, including on the waiting screen when no photos are cached. Set `CONTROL_URL_DISPLAY_SECONDS` in `.env` to change this duration; it accepts nonnegative whole seconds, with `0` disabling the overlay. The countdown begins when the slideshow opens, after any initial sync. The overlay disappears during a long photo interval without advancing or reloading the photo. This startup setting is separate from the photo duration controlled by the form.
+
+Address detection uses the operating system's route-selected local address, with a fallback to active Linux interfaces when no route is available. It does not hard-code a board model or interface name, send a probe datagram, or require internet access. An explicit `CONTROL_HOST` uses that listener's address. If detection fails, the server continues with a warning and no URL overlay; check the board's network settings or router device list. Detection runs at startup, so restart the application after an address change. On machines with several networks or a VPN, the selected route may belong to another network; bind `CONTROL_HOST` to the desired local address if needed.
+
+Enter positive whole seconds and click **Apply**. The page uses a normal HTML form, without JavaScript, CSS, or internet assets. The server accepts integer text such as `5`, validates it, and redirects back to the page with the updated duration. Letters, blanks, decimal notation such as `5.0`, fractions, zero, and negative values show an error directly below the form. Invalid submissions preserve the active setting and keep the slideshow running; correct the input and submit again.
+
+Changes apply starting with the next successfully displayed photo. The current photo finishes its original interval. Settings live in memory: restarting restores `DISPLAY_SECONDS` from configuration. Refreshing the page displays the current setting. The panel starts before initial cloud sync and also works in cache-only mode without internet access. The `sync` command does not start it.
+
+The panel is intended for a trusted local network and has no login. No Wi-Fi setup or public hosting is included. Escape, window close, or Ctrl+C stops the panel with the display. An unavailable port produces a startup error; unexpected server exit stops the display with an error. Run one application process; a separate Uvicorn process or multiple workers would not share these runtime settings. Google authorization continues to use its separate port 8080.
+
 ### Maintenance and deployment
 
-`pyproject.toml` declares direct dependencies and profiles; the generated `uv.lock` fixes their resolved versions. `requirements.txt` is no longer maintained. Install development tooling with `uv sync --locked --extra display` on a standard environment, or `uv sync --locked --inexact --python /path/to/board/python --no-python-downloads` on a board with separately provisioned Pygame.
+`pyproject.toml` declares runtime dependencies and the development group; the generated `uv.lock` fixes their resolved versions. `requirements.txt` is no longer maintained. Install runtime packages and development tooling together with `uv sync --locked`. Resolve any board-specific Pygame source as described above before migrating that board.
 
 ### Automated tests
 
@@ -157,14 +165,14 @@ After installing development tooling and Pygame, run from the repository root:
 uv run --no-sync python -m pytest -q
 ```
 
-The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real image rendering (including HEIC and EXIF rotation), slideshow waiting/cycling/exit, CLI commands, and background sync startup. It uses temporary cache/token files, mocked cloud services, and SDL's dummy video/audio drivers. No `.env`, Google account, network access, or physical display is needed.
+The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real image rendering (including HEIC and EXIF rotation), slideshow waiting/cycling/exit, CLI commands, background sync startup, integer form validation and error recovery, updates between photos, control server lifecycle, automatic address selection, and timed URL overlay rendering/restoration. It uses temporary cache/token files, mocked cloud services, and SDL's dummy video/audio drivers. No `.env`, Google account, network access, or physical display is needed.
 
 Tests reflect the current filename-based cache behavior: existing files are retained, duplicate names are skipped, and remote deletions do not delete cached photos. Live Google OAuth/connectivity and visible output on the target board remain manual checks; these tests do not verify the hardware graphics stack.
 
 ### Updating and transferring the installation
 
-For an intentional package update, edit the relevant version constraint, run `uv lock --upgrade-package PACKAGE`, review the metadata/lockfile diff, and verify the selected profile before deploying it. Use `uv lock --check` to check metadata/lockfile consistency. Keep the board's `pillow_heif` and Pygame compatibility requirements in mind when changing pins. For an external tool that specifically requires a requirements file, export one from the lockfile rather than maintaining another list; for example, `uv export --locked --no-dev --extra display --no-emit-project --format requirements.txt --output-file /tmp/digitalframe-requirements.txt` exports the standard profile's dependencies. [uv project workflow](https://docs.astral.sh/uv/guides/projects/), [lockfile exports](https://docs.astral.sh/uv/concepts/projects/export/)
+For an intentional package update, edit the relevant version constraint, run `uv lock --upgrade-package PACKAGE`, review the metadata/lockfile diff, and verify the unified installation before deploying it. Use `uv lock --check` to check metadata/lockfile consistency. Keep the board's `pillow_heif` and Pygame compatibility requirements in mind when changing pins. For an external tool that specifically requires a requirements file, export one from the lockfile rather than maintaining another list; for example, `uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file /tmp/digitalframe-requirements.txt` exports the runtime dependencies. [uv project workflow](https://docs.astral.sh/uv/guides/projects/), [lockfile exports](https://docs.astral.sh/uv/concepts/projects/export/)
 
-To transfer the frame, check out the same repository revision on the new machine, install its OS prerequisites and uv, select a compatible interpreter/display profile, supply local configuration and credentials, and synchronize the lockfile. Validate actual visible output on that machine. A startup service can eventually invoke the absolute path to `.venv/bin/digitalframe run` as the frame user, once its graphical/TTY session access is configured; startup should not resolve or install dependencies.
+To transfer the frame, check out the same repository revision on the new machine, install its OS prerequisites and uv, select a compatible interpreter and any required declared Pygame source, supply local configuration and credentials, and synchronize the lockfile. Validate actual visible output on that machine. A startup service can eventually invoke the absolute path to `.venv/bin/digitalframe run` as the frame user, once its graphical/TTY session access is configured; startup should not resolve or install dependencies.
 
-Docker is no longer the active deployment path. For this single-user frame, native execution keeps display and host-network access straightforward; the earlier Docker configuration remains in Git history. A future local control server can share application/configuration functions without launching another slideshow or requiring containers. Wi-Fi control will need an adapter to the host's network manager and its authorization model. No server or automatic-startup service is introduced by this migration.
+Docker is no longer the active deployment path. For this single-user frame, native execution keeps display and host-network access straightforward; the earlier Docker configuration remains in Git history. The local control server shares the slideshow process and runtime settings. It assumes Wi-Fi is already connected and does not manage network configuration. Automatic startup after reboot remains future work.

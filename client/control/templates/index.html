@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DigitalFrame control</title>
+</head>
+<body>
+  <h1>DigitalFrame control</h1>
+  <p>Current duration: $current seconds per photo.</p>
+  <form method="post" action="/settings">
+    <label for="seconds">Seconds per photo</label>
+    <input id="seconds" name="display_seconds" type="text" inputmode="numeric"
+           value="$value" aria-describedby="error">
+    <button type="submit">Apply</button>
+  </form>
+  <p id="error" role="alert">$error</p>
+  <p>Changes apply from the next photo. Restarting restores the configured duration.</p>
+</body>
+</html>

@@ -2,7 +2,8 @@ import logging
 
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
-from .logging_config import configure_logging
+from .settings import RuntimeSettings
+from .overlay import ControlUrlOverlay
 from PIL import ExifTags, Image, ImageOps
 from pillow_heif import register_heif_opener
 register_heif_opener()
@@ -133,18 +134,26 @@ def display_photo(screen, photo_path):
     image = None
     return True
 
-def show_slideshow():
+def show_slideshow(settings=None, *, check_running=lambda: None,
+                   control_url=None, url_display_seconds=30):
+    if settings is None:
+        settings = RuntimeSettings(DISPLAY_SECONDS)
     pygame.init()
-
-    screen = pygame.display.set_mode((800, 600))
-    pygame.display.set_caption("Digital Frame")
 
     logger.info("Slideshow started")
     running = True
     waiting_for_photos = False
 
     try:
+        screen = pygame.display.set_mode((800, 600))
+        pygame.display.set_caption("Digital Frame")
+        screen.fill("black")
+        pygame.display.flip()
+        overlay = ControlUrlOverlay(screen, control_url, url_display_seconds)
+        overlay.new_frame()
         while running:
+            check_running()
+            overlay.update()
             photos = get_cached_photos()
             if not photos:
                 if not waiting_for_photos:
@@ -155,10 +164,11 @@ def show_slideshow():
                     screen,
                     "No cached photos available."
                 )
+                overlay.new_frame()
 
                 running = handle_events()
 
-                pygame.time.wait(int(IDLE_SECONDS * 1000))
+                overlay.wait(int(IDLE_SECONDS * 1000))
                 continue
 
             if waiting_for_photos:
@@ -168,22 +178,31 @@ def show_slideshow():
                 waiting_for_photos = False
 
             for photo_path in photos:
+                check_running()
+                overlay.update()
+                if not handle_events():
+                    running = False
+                    break
                 success = display_photo(screen, photo_path)
                 if not success:
                     continue
 
                 start_time = pygame.time.get_ticks()
+                duration_ms = settings.display_seconds * 1000
+                overlay.new_frame()
 
                 while (
                     pygame.time.get_ticks() - start_time
-                    < int(DISPLAY_SECONDS * 1000)
+                    < duration_ms
                 ):
+                    check_running()
+                    overlay.update()
                     running = handle_events()
 
                     if not running:
                         break
 
-                    pygame.time.wait(int(IDLE_SECONDS * 1000))
+                    overlay.wait(int(IDLE_SECONDS * 1000))
 
                 if not running:
                     break
@@ -193,5 +212,6 @@ def show_slideshow():
         logger.info("Slideshow stopped")
 
 if __name__ == "__main__":
-    configure_logging()
-    show_slideshow()
+    from .runtime import main
+
+    main()

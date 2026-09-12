@@ -3,7 +3,7 @@
 Date: 2026-09-11  
 Base: local `main` at `5872dc4`  
 Branch: `feature/slideshow-control-panel`  
-Status: proposed; this change creates the plan only.
+Status: implemented on `feature/slideshow-control-panel`; local automated, socket, and packaging checks passed. Separate-device Wi-Fi access and physical-board verification remain pending.
 
 ## Goal and scope
 
@@ -59,6 +59,7 @@ New direct runtime requirements:
 | `fastapi` | HTTP routes, request validation integration, and page responses. |
 | `uvicorn` | Run the FastAPI ASGI application alongside the display. |
 | `python-multipart` | Required by FastAPI `Form` for receiving HTML form submissions. |
+| `starlette` | Explicit direct dependency for the HTTP exception type used to render malformed form requests as HTML errors. |
 
 Use the minimal FastAPI and Uvicorn packages without their `standard` extras. FastAPI supplies the web framework and Uvicorn serves it. [FastAPI server documentation](https://fastapi.tiangolo.com/deployment/manually/)
 
@@ -165,4 +166,31 @@ Manual acceptance checks on the already-connected frame:
 4. Add managed Uvicorn startup and integrate shared settings into both display workflows; verify lifecycle and per-photo timing.
 5. Update existing tests and documentation, run the full offline suite and package checks, then complete the board/browser smoke checks.
 
-The feature is complete when a browser on another device connected to the same Wi-Fi can reach the frame's IP address and change its running slideshow's positive integer display interval through a plain HTML form with no JavaScript or CSS, invalid input shows an error below the form without changing state or crashing the application, the lifecycle exits cleanly, and display/control/base Python packages install together reproducibly through uv. Record any pending hardware checks explicitly. This planning change does not install packages or implement the feature.
+The feature is complete when a browser on another device connected to the same Wi-Fi can reach the frame's IP address and change its running slideshow's positive integer display interval through a plain HTML form with no JavaScript or CSS, invalid input shows an error below the form without changing state or crashing the application, the lifecycle exits cleanly, and display/control/base Python packages install together reproducibly through uv. Record any pending hardware checks explicitly.
+
+## Implementation and verification results
+
+- Implemented the plain HTML GET/POST form, escaped values, error paragraph, positive-integer validation, 303 success redirect, and shared thread-safe runtime settings. The page uses no JavaScript, CSS, or internet assets. Disabled the unused generated API docs endpoints.
+- Integrated one managed Uvicorn thread with both the full frame workflow and cache-only slideshow, including legacy module commands. Pygame stays on the main thread; each photo snapshots its duration. The existing sync order is preserved, with panel startup before initial sync.
+- Added direct pins `fastapi==0.141.1`, `uvicorn==0.52.4`, `python-multipart==0.0.32`, and `starlette==1.6.0`. Starlette is explicitly declared because the form error handler imports its HTTP exception class. Moved `pygame==2.6.1` into the base installation and kept existing package pins unchanged.
+- Installed the complete locked environment in `/tmp/digitalframe-control-venv` on Linux AArch64/Python 3.12.3. The existing project environment and local `.env`, credentials, tokens, and cached photos were left untouched. `uv lock --check` passed.
+- The offline/headless suite passed: **105 tests** covering form errors and correction, configuration parsing, concurrent settings access, live timing changes, rendering, cloud mocks, command dispatch, startup failures, and bounded server cleanup. Sandbox restrictions stalled the test client's event-loop wakeup; running the same offline tests outside the sandbox completed successfully. Starlette emitted one deprecation warning about the existing HTTPX test transport; no additional test dependency was introduced.
+- A temporary loopback-only smoke check exercised real Uvicorn GET/POST responses, invalid input, occupied-port failure, shutdown, and restart. Both `python -m client slideshow` and `python -m client.slideshow` passed actual form requests, Ctrl+C cleanup, port release, and reset-on-restart checks using temporary data and SDL dummy drivers.
+- Built the wheel and source distribution in `/tmp/digitalframe-control-dist`. Both include the control package and HTML; rendered the page directly from the wheel outside the checkout. Verified that cache, secrets, and `.env` are excluded. `git diff --check` passed.
+
+### Pending hardware acceptance
+
+- Open the frame's actual Wi-Fi IP from a separate phone/tablet/computer and confirm form behavior and readable errors in its browser. Loopback checks do not establish this network path.
+- Verify visible per-photo timing and continued synchronization on the actual display.
+- Validate the unified Pygame install on the archived ARMv7/Python 3.14 Banana Pi. If its custom SDL build is required, obtain/build and declare the compatible wheel source with a recorded build procedure and hash. The hardware and original custom artifact were unavailable locally, so no board-specific source was invented and the existing board installation was not changed.
+
+
+## Follow-up: detected access URL and startup overlay
+
+- Replace the literal placeholder in runtime logs with a URL derived from the actual server listener. For a wildcard bind, choose the operating system's route-selected local IP; fall back to active Linux interface addresses if route selection fails. No board names, wireless interface names, new Python packages, or external address service are required. Missing network information logs a warning without stopping the server.
+- Show the detected URL in a readable black-backed banner at the slideshow's top-left. Start the countdown when the display opens, including the empty-cache waiting screen, after initial sync. Keep the same deadline across photo changes, and restore the covered pixels when it expires without rereading or advancing the current photo.
+- Add `CONTROL_URL_DISPLAY_SECONDS=30` to configuration and `.env.example`; accept nonnegative integers and allow `0` to disable the banner. Keep this startup-only setting separate from the form's editable photo duration. Do not modify the local `.env`.
+- New files: `client/control/address.py`, `client/overlay.py`, `tests/test_control_address.py`, and `tests/test_overlay.py`. Update runtime/server wiring, configuration, existing tests, and the README.
+- Test route-selected IPv4 and IPv6 URLs, explicit listeners, alternate interface names, missing routes/tools, invalid interface output, and graceful detection failure. Test actual overlay pixels, top-left placement, expiration on the same photo, redraw across photos, empty-cache display, disabled/missing-URL behavior, and configurable duration parsing with fake time.
+- Address detection is a startup snapshot. Route selection on machines with multiple networks or VPNs may require an explicit bind address. Physical-board networking and visibility still require the hardware acceptance checks above.
+- Follow-up verification (2026-09-12): **137 offline/headless tests passed**, including address selection and actual overlay pixel restoration at expiry. The existing HTTPX deprecation warning remains unchanged. A real wildcard-bound Uvicorn server advertised the detected local IP and actual assigned port; requests to that URL, occupied-port handling, restart, and cache-only CLI/legacy Ctrl+C cleanup passed. Rebuilt wheel/sdist artifacts include both new modules and the HTML. No new dependencies were needed.

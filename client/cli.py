@@ -21,8 +21,8 @@ def require_pygame() -> None:
             raise
         typer.echo(
             "Pygame is required for display commands. For a standard install, "
-            "run 'uv sync --locked --no-dev --extra display'. On a board with "
-            "a custom SDL build, provision its working Pygame instead. "
+            "run 'uv sync --locked --no-dev'. For a board with "
+            "a custom SDL build, configure its compatible Pygame source in uv. "
             "See README.md.",
             err=True,
         )
@@ -31,7 +31,7 @@ def require_pygame() -> None:
 
 @app.command()
 def run() -> None:
-    """Synchronize in the background and display photos."""
+    """Synchronize, display photos, and serve the Wi-Fi control panel."""
     require_pygame()
     from .main import main as run_frame
 
@@ -40,13 +40,11 @@ def run() -> None:
 
 @app.command()
 def slideshow() -> None:
-    """Display cached photos without cloud access."""
+    """Display cached photos with the Wi-Fi control panel; no cloud access."""
     require_pygame()
-    from .logging_config import configure_logging
-    from .slideshow import show_slideshow
+    from .runtime import main as run_cached
 
-    configure_logging()
-    show_slideshow()
+    run_cached()
 
 
 @app.command()

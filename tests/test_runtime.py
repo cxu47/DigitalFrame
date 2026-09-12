@@ -41,13 +41,14 @@ main(sys.argv[1:])
 @pytest.mark.parametrize("command", ["run", "sync", "slideshow"])
 def test_commands_dispatch_to_the_expected_workflow(app, monkeypatch, command):
     from client import cli
+    from client import runtime
 
     run = Mock()
     sync = Mock()
     slideshow = Mock()
     monkeypatch.setattr(app.main, "main", run)
     monkeypatch.setattr(app.sync, "sync_photos", sync)
-    monkeypatch.setattr(app.slideshow, "show_slideshow", slideshow)
+    monkeypatch.setattr(runtime, "main", slideshow)
 
     result = CliRunner().invoke(cli.app, [command])
 
@@ -77,7 +78,7 @@ def test_sync_works_without_pygame_and_display_commands_explain_missing_dependen
         result = runner.invoke(cli.app, [command])
         assert result.exit_code == 1
         assert "Pygame is required" in result.output
-        assert "--extra display" in result.output
+        assert "uv sync --locked --no-dev" in result.output
 
 
 def test_frame_syncs_before_starting_background_worker_and_slideshow(app, monkeypatch):
@@ -93,7 +94,11 @@ def test_frame_syncs_before_starting_background_worker_and_slideshow(app, monkey
 
     monkeypatch.setattr(app.main, "sync_photos", lambda: calls.append("initial sync"))
     monkeypatch.setattr(app.main.threading, "Thread", Worker)
-    monkeypatch.setattr(app.main, "show_slideshow", lambda: calls.append("slideshow"))
+    def run_display(*, before_display):
+        before_display()
+        calls.append("slideshow")
+
+    monkeypatch.setattr(app.main, "run_display", run_display)
 
     app.main.main()
 
@@ -119,3 +124,74 @@ def test_background_sync_repeats_at_configured_interval(app, monkeypatch):
         app.main.sync_loop()
 
     assert calls == [42, "sync", 42, "sync"]
+
+
+@pytest.mark.parametrize("failure_stage", [None, "sync", "display", "interrupt", "server"])
+def test_panel_shares_settings_and_stops_on_every_runtime_exit(app, monkeypatch, failure_stage):
+    from fastapi.testclient import TestClient
+    from client import runtime
+
+    calls = []
+
+    class Panel:
+        url = "http://192.168.1.42:8000"
+
+        def __init__(self, web_app, host, port):
+            assert (host, port) == ("0.0.0.0", 8000)
+            self.browser = TestClient(web_app)
+
+        def start(self):
+            calls.append("panel")
+            self.browser.post("/settings", data={"display_seconds": "10"})
+
+        def check_running(self):
+            if failure_stage == "server":
+                raise RuntimeError("server failed")
+
+        def stop(self):
+            calls.append("stop")
+            self.browser.close()
+
+    def before_display():
+        calls.append("sync")
+        if failure_stage == "sync":
+            raise RuntimeError("sync failed")
+
+    def display(settings, *, check_running, control_url, url_display_seconds):
+        calls.append("display")
+        assert settings.display_seconds == 10
+        assert control_url == Panel.url
+        assert url_display_seconds == 30
+        check_running()
+        if failure_stage == "display":
+            raise RuntimeError("display failed")
+        if failure_stage == "interrupt":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(runtime, "ControlServer", Panel)
+    monkeypatch.setattr(app.slideshow, "show_slideshow", display)
+    if failure_stage:
+        exception = KeyboardInterrupt if failure_stage == "interrupt" else RuntimeError
+        with pytest.raises(exception):
+            runtime.run_display(before_display=before_display)
+    else:
+        runtime.run_display(before_display=before_display)
+    assert calls[:2] == ["panel", "sync"]
+    assert calls[-1] == "stop"
+    assert ("display" in calls) is (failure_stage not in {"sync", "server"})
+
+
+def test_cache_only_runtime_does_not_sync(app, monkeypatch):
+    from client import runtime
+
+    panel = Mock()
+    display = Mock()
+    sync = Mock(side_effect=AssertionError("Cache-only display accessed Drive"))
+    monkeypatch.setattr(runtime, "ControlServer", Mock(return_value=panel))
+    monkeypatch.setattr(app.slideshow, "show_slideshow", display)
+    monkeypatch.setattr(app.sync, "sync_photos", sync)
+    runtime.main()
+    sync.assert_not_called()
+    panel.start.assert_called_once()
+    display.assert_called_once()
+    panel.stop.assert_called_once()

@@ -69,7 +69,7 @@ def test_slideshow_waits_for_new_photos_cycles_and_exits_cleanly(app, monkeypatc
     app.cache.mkdir()
     displayed = []
     messages = []
-    ticks = count(0, 100)
+    ticks = count(0, 500)
     waits = []
     render = slideshow.display_photo
     render_message = slideshow.display_message
@@ -110,3 +110,81 @@ def test_slideshow_waits_for_new_photos_cycles_and_exits_cleanly(app, monkeypatc
     assert len(messages) == 1
     assert displayed == ["a.png", "b.png", "a.png"]
     assert waits and all(delay == 10 for delay in waits)
+
+
+@pytest.mark.parametrize("initial,updated", [(5, 10), (5, 1)])
+def test_form_update_applies_to_next_photo_and_invalid_input_keeps_current_interval(
+    app, monkeypatch, initial, updated,
+):
+    from fastapi.testclient import TestClient
+    from client.control.app import create_app
+    from client.settings import RuntimeSettings
+
+    slideshow = app.slideshow
+    settings = RuntimeSettings(initial)
+    clock = [0]
+    displayed = []
+    changed = [False]
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: ["a", "b", "c"])
+    monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: clock[0])
+
+    def display(screen, path):
+        displayed.append((path, clock[0]))
+        return True
+
+    with TestClient(create_app(settings)) as browser:
+        def wait(milliseconds):
+            clock[0] += 100
+            if not changed[0]:
+                invalid = browser.post("/settings", data={"display_seconds": "5.0"})
+                assert invalid.status_code == 422
+                assert settings.display_seconds == initial
+                browser.post("/settings", data={"display_seconds": str(updated)})
+                changed[0] = True
+            assert clock[0] <= (initial + updated + 1) * 1000
+
+        monkeypatch.setattr(slideshow, "display_photo", display)
+        monkeypatch.setattr(slideshow, "handle_events", lambda: len(displayed) < 3)
+        monkeypatch.setattr(slideshow.pygame.time, "wait", wait)
+        slideshow.show_slideshow(settings)
+
+    assert displayed == [("a", 0), ("b", initial * 1000), ("c", (initial + updated) * 1000)]
+    assert not slideshow.pygame.get_init()
+
+
+def test_update_while_cache_empty_applies_to_first_photo(app, monkeypatch):
+    from fastapi.testclient import TestClient
+    from client.control.app import create_app
+    from client.settings import RuntimeSettings
+
+    slideshow = app.slideshow
+    settings = RuntimeSettings(5)
+    clock = [0]
+    photos = []
+    shown = []
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: photos)
+    monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: clock[0])
+    monkeypatch.setattr(slideshow, "handle_events", lambda: len(shown) < 2)
+    monkeypatch.setattr(slideshow, "display_photo", lambda screen, path: shown.append(clock[0]) or True)
+
+    with TestClient(create_app(settings)) as browser:
+        def wait(milliseconds):
+            clock[0] += 100
+            if not photos:
+                browser.post("/settings", data={"display_seconds": "1"})
+                photos.extend(["a", "b"])
+            assert clock[0] < 2000
+
+        monkeypatch.setattr(slideshow.pygame.time, "wait", wait)
+        slideshow.show_slideshow(settings)
+    assert shown == [100, 1100]
+
+
+def test_display_initialization_error_releases_pygame(app, monkeypatch):
+    def fail(size):
+        raise app.slideshow.pygame.error("display unavailable")
+
+    monkeypatch.setattr(app.slideshow.pygame.display, "set_mode", fail)
+    with pytest.raises(app.slideshow.pygame.error):
+        app.slideshow.show_slideshow()
+    assert not app.slideshow.pygame.get_init()
