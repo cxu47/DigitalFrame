@@ -85,17 +85,27 @@ def test_frame_syncs_before_starting_background_worker_and_slideshow(app, monkey
     calls = []
 
     class Worker:
-        def __init__(self, *, target, daemon, name):
+        def __init__(self, *, target, args, daemon, name):
             assert target is app.main.sync_loop
+            assert args == (queue[0],)
             assert daemon is True
 
         def start(self):
             calls.append("background")
 
-    monkeypatch.setattr(app.main, "sync_photos", lambda: calls.append("initial sync"))
+    queue = []
+
+    def sync_photos(*, new_photos):
+        queue.append(new_photos)
+        new_photos.put("new photo")
+        calls.append("initial sync")
+
+    monkeypatch.setattr(app.main, "sync_photos", sync_photos)
     monkeypatch.setattr(app.main.threading, "Thread", Worker)
-    def run_display(*, before_display):
+    def run_display(*, before_display, new_photos):
         before_display()
+        assert new_photos is queue[0]
+        assert new_photos.get_nowait() == "new photo"
         calls.append("slideshow")
 
     monkeypatch.setattr(app.main, "run_display", run_display)
@@ -106,7 +116,10 @@ def test_frame_syncs_before_starting_background_worker_and_slideshow(app, monkey
 
 
 def test_background_sync_repeats_at_configured_interval(app, monkeypatch):
+    from queue import SimpleQueue
+
     calls = []
+    queue = SimpleQueue()
 
     class StopLoop(Exception):
         pass
@@ -118,10 +131,14 @@ def test_background_sync_repeats_at_configured_interval(app, monkeypatch):
 
     monkeypatch.setattr(app.main, "SYNC_INTERVAL", 42)
     monkeypatch.setattr(app.main.time, "sleep", sleep)
-    monkeypatch.setattr(app.main, "sync_photos", lambda: calls.append("sync"))
+    def sync_photos(*, new_photos):
+        assert new_photos is queue
+        calls.append("sync")
+
+    monkeypatch.setattr(app.main, "sync_photos", sync_photos)
 
     with pytest.raises(StopLoop):
-        app.main.sync_loop()
+        app.main.sync_loop(queue)
 
     assert calls == [42, "sync", 42, "sync"]
 
@@ -157,11 +174,14 @@ def test_panel_shares_settings_and_stops_on_every_runtime_exit(app, monkeypatch,
         if failure_stage == "sync":
             raise RuntimeError("sync failed")
 
-    def display(settings, *, check_running, control_url, url_display_seconds):
+    queue = object()
+
+    def display(settings, *, check_running, control_url, url_display_seconds, new_photos):
         calls.append("display")
         assert settings.display_seconds == 10
         assert control_url == Panel.url
         assert url_display_seconds == 30
+        assert new_photos is queue
         check_running()
         if failure_stage == "display":
             raise RuntimeError("display failed")
@@ -173,9 +193,9 @@ def test_panel_shares_settings_and_stops_on_every_runtime_exit(app, monkeypatch,
     if failure_stage:
         exception = KeyboardInterrupt if failure_stage == "interrupt" else RuntimeError
         with pytest.raises(exception):
-            runtime.run_display(before_display=before_display)
+            runtime.run_display(before_display=before_display, new_photos=queue)
     else:
-        runtime.run_display(before_display=before_display)
+        runtime.run_display(before_display=before_display, new_photos=queue)
     assert calls[:2] == ["panel", "sync"]
     assert calls[-1] == "stop"
     assert ("display" in calls) is (failure_stage not in {"sync", "server"})

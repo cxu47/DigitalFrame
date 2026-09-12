@@ -81,3 +81,32 @@ def test_download_writes_all_chunks(app, tmp_path, monkeypatch):
     assert destination.read_bytes() == b"abcdef"
     assert transport.request.call_count == 2
     service.files.return_value.get_media.assert_called_once_with(fileId="photo-id")
+
+
+def test_album_listing_paginates_root_and_children_and_ignores_loose_and_nested_photos(app, monkeypatch):
+    service = Mock()
+    folder = lambda file_id: {"id": file_id, "name": file_id, "mimeType": "application/vnd.google-apps.folder"}
+    photo = lambda file_id: {"id": file_id, "name": file_id + ".jpg", "mimeType": "image/jpeg"}
+    service.files.return_value.list.return_value.execute.side_effect = [
+        {"files": [photo("loose"), folder("kids")], "nextPageToken": "root-next"},
+        {"files": [photo("one"), folder("nested")], "nextPageToken": "kids-next"},
+        {"files": [photo("two")]},
+        {"files": [folder("empty")]},
+        {"files": []},
+    ]
+    monkeypatch.setattr(app.drive, "get_drive_service", lambda: service)
+    assert app.drive.list_albums("root") == [
+        {"id": "kids", "name": "kids", "photos": [photo("one"), photo("two")]},
+        {"id": "empty", "name": "empty", "photos": []},
+    ]
+    calls = service.files.return_value.list.call_args_list
+    assert [call.kwargs["pageToken"] for call in calls] == [None, None, "kids-next", "root-next", None]
+    assert all("md5Checksum" in call.kwargs["fields"] for call in calls)
+
+
+def test_incomplete_drive_search_cannot_be_used_to_delete_cached_photos(app, monkeypatch):
+    service = Mock()
+    service.files.return_value.list.return_value.execute.return_value = {"files": [], "incompleteSearch": True}
+    monkeypatch.setattr(app.drive, "get_drive_service", lambda: service)
+    with pytest.raises(RuntimeError, match="incomplete"):
+        app.drive.list_albums("root")

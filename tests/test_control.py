@@ -80,3 +80,34 @@ def test_multipart_text_field_is_supported(panel):
     response = browser.post("/settings", files={"display_seconds": (None, "10")})
     assert response.status_code == 200
     assert settings.display_seconds == 10
+
+
+def test_folder_form_includes_empty_albums_escapes_names_and_tracks_sync_changes():
+    folders = ['kids', 'summer', 'empty', 'All', '<fun & "things">']
+    settings = RuntimeSettings(5, folders=lambda: folders)
+    with TestClient(create_app(settings)) as browser:
+        page = browser.get('/').text
+        assert '<option value="" selected>All</option>' in page
+        assert '<option value="empty">empty</option>' in page
+        assert '&lt;fun &amp; &quot;things&quot;&gt;' in page
+        result = browser.post('/folder', data={'folder': 'kids'}, follow_redirects=False)
+        assert result.status_code == 303
+        assert settings.selected_folder == 'kids'
+        assert '<option value="kids" selected>kids</option>' in browser.get('/').text
+        assert browser.post('/folder', data={'folder': '../outside'}).status_code == 422
+        assert browser.post('/folder', json={'folder': 'summer'}).status_code == 415
+        invalid = browser.post('/folder', files={'folder': ('name.txt', b'kids')})
+        assert invalid.status_code == 422
+        assert 'Choose an existing folder or All.' in invalid.text
+        assert settings.selected_folder == 'kids'
+        folders.append('new album')
+        assert 'new album' in browser.get('/').text
+        folders.remove('kids')
+        assert '<option value="" selected>All</option>' in browser.get('/').text
+        assert settings.selected_folder is None
+        browser.post('/folder', data={'folder': 'All'})
+        assert settings.selected_folder == 'All'  # A real folder named All is distinct.
+        browser.post('/folder', data={'folder': ''})
+        assert settings.selected_folder is None
+        browser.post('/folder', data={'folder': 'summer'})
+        assert RuntimeSettings(5, folders=lambda: folders).selected_folder is None

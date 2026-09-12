@@ -14,7 +14,13 @@
            value="$value" aria-describedby="error">
     <button type="submit">Apply</button>
   </form>
+  <form method="post" action="/folder">
+    <label for="folder">Photo folder</label>
+    <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
+    <button type="submit">Apply folder</button>
+  </form>
   <p id="error" role="alert">$error</p>
-  <p>Changes apply from the next photo. Restarting restores the configured duration.</p>
+  <p>Changes apply from the next photo. Restarting restores the configured duration and All folders.</p>
+  <p>Refresh this page after syncing to see added or renamed folders.</p>
 </body>
 </html>

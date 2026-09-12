@@ -1,4 +1,6 @@
 import logging
+from collections import deque
+from queue import Empty
 
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
@@ -10,6 +12,7 @@ register_heif_opener()
 
 
 logger = logging.getLogger(__name__)
+SUPPORTED_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 def handle_events():
     for event in pygame.event.get():
@@ -34,14 +37,43 @@ def display_message(screen, message):
     screen.blit(text, text_rect)
     pygame.display.flip()
 
-def get_cached_photos():
-    supported = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+def get_cached_folders():
+    if not CACHE_DIR.exists():
+        return []
+    return sorted(path.name for path in CACHE_DIR.iterdir()
+                  if not path.name.startswith(".") and not path.is_symlink() and path.is_dir())
 
+
+def get_cached_photos():
     return sorted(
         path
-        for path in CACHE_DIR.iterdir()
-        if path.is_file() and path.suffix.lower() in supported
+        for folder in get_cached_folders()
+        for path in (CACHE_DIR / folder).glob("*")
+        if not path.is_symlink() and path.is_file() and path.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES
     )
+
+def prioritize_new_photos(photos, new_photos, accepts=lambda photo: True):
+    """Check for completed downloads between photos, retaining the cycle's place."""
+    remaining = deque(photos)
+    shown = set()
+    while True:
+        if new_photos is not None:
+            try:
+                photo = new_photos.get_nowait()
+            except Empty:
+                pass
+            else:
+                if (photo.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES
+                        and photo not in shown and accepts(photo)):
+                    shown.add(photo)
+                    yield photo
+                continue
+        if not remaining:
+            return
+        photo = remaining.popleft()
+        if photo not in shown and accepts(photo):
+            shown.add(photo)
+            yield photo
 
 def display_photo(screen, photo_path):
     image = None
@@ -135,9 +167,9 @@ def display_photo(screen, photo_path):
     return True
 
 def show_slideshow(settings=None, *, check_running=lambda: None,
-                   control_url=None, url_display_seconds=30):
+                   control_url=None, url_display_seconds=30, new_photos=None):
     if settings is None:
-        settings = RuntimeSettings(DISPLAY_SECONDS)
+        settings = RuntimeSettings(DISPLAY_SECONDS, folders=get_cached_folders)
     pygame.init()
 
     logger.info("Slideshow started")
@@ -164,16 +196,19 @@ def show_slideshow(settings=None, *, check_running=lambda: None,
 
         def refresh_overlay():
             nonlocal observed_revision
-            seconds, revision = settings.snapshot()
+            message, revision = settings.notification_snapshot()
             if revision != observed_revision:
-                overlay.show_message(f"Seconds per photo: {seconds}", 15)
+                overlay.show_message(message, 15)
                 observed_revision = revision
             overlay.update()
 
         while running:
             check_running()
             refresh_overlay()
+            selected_folder = settings.selected_folder
             photos = get_cached_photos()
+            if selected_folder is not None:
+                photos = [photo for photo in photos if photo.parent.name == selected_folder]
             if not photos:
                 if not waiting_for_photos:
                     logger.info("No cached photos available; waiting")
@@ -196,9 +231,20 @@ def show_slideshow(settings=None, *, check_running=lambda: None,
                 )
                 waiting_for_photos = False
 
-            for photo_path in photos:
+            def accepts(photo):
+                return (photo.parent.parent == CACHE_DIR and photo.is_file()
+                        and (selected_folder is None or photo.parent.name == selected_folder))
+
+            rotation = prioritize_new_photos(photos, new_photos, accepts=accepts)
+            while True:
                 check_running()
                 refresh_overlay()
+                if settings.selected_folder != selected_folder:
+                    break
+                try:
+                    photo_path = next(rotation)
+                except StopIteration:
+                    break
                 if not handle_events():
                     running = False
                     break

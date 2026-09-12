@@ -137,7 +137,10 @@ def test_form_updates_show_for_15_seconds_using_existing_overlay(
         original_show(self, text, seconds)
 
     monkeypatch.setattr(overlay.SlideshowOverlay, "show_message", show_message)
-    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [] if empty_cache else ["a"])
+    photo = app.cache / "kids" / "a.jpg"
+    photo.parent.mkdir(parents=True)
+    photo.touch()
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [] if empty_cache else [photo])
     monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: int(clock[0] * 1000))
     monkeypatch.setattr(slideshow, "handle_events", lambda: clock[0] < 136)
     monkeypatch.setattr(slideshow, "IDLE_SECONDS", 1)
@@ -186,7 +189,10 @@ def test_slideshow_removes_banner_during_long_photo_or_waiting_screen(app, clock
     painted = []
     from client.settings import RuntimeSettings
 
-    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [] if empty_cache else ["a"])
+    photo = app.cache / "kids" / "a.jpg"
+    photo.parent.mkdir(parents=True)
+    photo.touch()
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [] if empty_cache else [photo])
     monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: int(clock[0] * 1000))
     monkeypatch.setattr(slideshow, "handle_events", lambda: clock[0] < 131)
     monkeypatch.setattr(slideshow, "IDLE_SECONDS", 1)
@@ -212,4 +218,85 @@ def test_slideshow_removes_banner_during_long_photo_or_waiting_screen(app, clock
     assert (130, (255, 0, 0)) in observed
     if not empty_cache:
         assert painted == [100]
+    assert not slideshow.pygame.get_init()
+
+
+@pytest.mark.parametrize("empty_cache", [False, True])
+@pytest.mark.parametrize("url_seconds", [0, 30])
+def test_folder_notifications_share_banner_and_report_automatic_fallback(
+    app, clock, monkeypatch, empty_cache, url_seconds,
+):
+    from fastapi.testclient import TestClient
+    from client.control.app import create_app
+    from client.settings import RuntimeSettings
+
+    slideshow = app.slideshow
+    folders = ["kids", "summer"]
+    settings = RuntimeSettings(60, folders=lambda: folders)
+    photo = app.cache / "kids" / "a.jpg"
+    photo.parent.mkdir(parents=True)
+    photo.touch()
+    messages = []
+    painted = []
+    observed = []
+    original_show = overlay.SlideshowOverlay.show_message
+
+    def show_message(self, text, seconds):
+        messages.append((clock[0], text, seconds))
+        original_show(self, text, seconds)
+
+    def draw(screen, *args):
+        screen.fill("red")
+        painted.append(clock[0])
+        return True
+
+    monkeypatch.setattr(overlay.SlideshowOverlay, "show_message", show_message)
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [] if empty_cache else [photo])
+    monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: int(clock[0] * 1000))
+    monkeypatch.setattr(slideshow, "handle_events", lambda: clock[0] < 146)
+    monkeypatch.setattr(slideshow, "IDLE_SECONDS", 1)
+    monkeypatch.setattr(slideshow, "display_photo", draw)
+    monkeypatch.setattr(slideshow, "display_message", draw)
+
+    with TestClient(create_app(settings)) as browser:
+        def wait(milliseconds):
+            screen = slideshow.pygame.display.get_surface()
+            observed.append((clock[0], screen.get_at((8, 8))[:3]))
+            clock[0] += milliseconds / 1000
+            if clock[0] == 101:
+                assert browser.post("/folder", data={"folder": "missing"}).status_code == 422
+            if clock[0] in {102, 110}:
+                assert browser.post("/folder", data={"folder": "kids"}).status_code == 200
+            if clock[0] == 112:
+                browser.post("/settings", data={"display_seconds": "50"})
+                browser.post("/folder", data={"folder": "summer"})
+            if clock[0] == 114:
+                browser.post("/folder", data={"folder": "kids"})
+                browser.post("/settings", data={"display_seconds": "60"})
+            if clock[0] == 116:
+                browser.post("/folder", data={"folder": ""})
+            if clock[0] == 120:
+                browser.post("/folder", data={"folder": "summer"})
+            if clock[0] == 130:
+                folders.remove("summer")
+            assert clock[0] < 150
+
+        monkeypatch.setattr(slideshow.pygame.time, "wait", wait)
+        slideshow.show_slideshow(settings, control_url="http://192.168.1.42:8000",
+                                 url_display_seconds=url_seconds)
+
+    assert messages == [
+        (102, "Photo folder: kids", 15),
+        (110, "Photo folder: kids", 15),
+        (112, "Photo folder: summer", 15),
+        (114, "Seconds per photo: 60", 15),
+        (116, "Photo folder: All", 15),
+        (120, "Photo folder: summer", 15),
+        (130, "Photo folder: All", 15),
+    ]
+    assert (144, (0, 0, 0)) in observed
+    assert (145, (255, 0, 0)) in observed
+    if not empty_cache:
+        assert painted == [100]  # Notifications leave the current photo and interval intact.
+    assert settings.selected_folder is None
     assert not slideshow.pygame.get_init()

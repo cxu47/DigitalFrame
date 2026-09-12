@@ -45,28 +45,42 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
+def _list_children(service, folder_id):
+    token = None
+    folder_id = folder_id.replace("\\", "\\\\").replace("'", "\\'")
+    while True:
+        result = service.files().list(
+            q=f"'{folder_id}' in parents and trashed = false",
+            fields="nextPageToken,incompleteSearch,files(id,name,mimeType,modifiedTime,md5Checksum,size)",
+            pageSize=1000,
+            pageToken=token,
+        ).execute()
+        if result.get("incompleteSearch"):
+            raise RuntimeError("Drive returned an incomplete folder listing")
+        yield from result.get("files", [])
+        token = result.get("nextPageToken")
+        if not token:
+            break
+
+
 def list_photos(drive_folder_id):
-    logger.debug("Requesting Google Drive photo listing")
+    return [file for file in _list_children(get_drive_service(), drive_folder_id)
+            if file["mimeType"].startswith("image/")]
+
+
+def list_albums(drive_folder_id):
+    """Read the complete one-level tree before allowing cache reconciliation."""
     service = get_drive_service()
-
-    result = service.files().list(
-        q=f"'{drive_folder_id}' in parents and trashed = false",
-        fields="files(id, name, mimeType, modifiedTime)",
-    ).execute()
-
-    files = result.get("files", [])
-
-    photos = [
-        file
-        for file in files
-        if file["mimeType"].startswith("image/")
-    ]
-
-    logger.debug(
-        "Google Drive photo listing returned %d images",
-        len(photos),
-    )
-    return photos
+    albums = []
+    for folder in _list_children(service, drive_folder_id):
+        if folder["mimeType"] != "application/vnd.google-apps.folder":
+            continue
+        albums.append({
+            "id": folder["id"], "name": folder["name"],
+            "photos": [file for file in _list_children(service, folder["id"])
+                       if file["mimeType"].startswith("image/")],
+        })
+    return albums
 
 
 def download_photo(file_id, destination):

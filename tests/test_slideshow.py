@@ -1,6 +1,7 @@
 """Render real images through Pillow and Pygame's headless display."""
 
 from itertools import count
+from queue import SimpleQueue
 
 import pytest
 from PIL import Image
@@ -92,9 +93,13 @@ def test_slideshow_uses_current_display_resolution_fullscreen(app, monkeypatch):
 
 def test_cache_selection_excludes_partial_files_and_directories(app):
     app.cache.mkdir()
+    (app.cache / "loose.jpg").touch()
+    album = app.cache / "kids"
+    album.mkdir()
     for name in ("b.PNG", "a.jpg", "c.heif", "photo.jpg.part", "notes.txt"):
-        (app.cache / name).touch()
-    (app.cache / "directory.jpg").mkdir()
+        (album / name).touch()
+    (album / "directory.jpg").mkdir()
+    (album / "directory.jpg" / "nested.jpg").touch()
 
     assert [p.name for p in app.slideshow.get_cached_photos()] == ["a.jpg", "b.PNG", "c.heif"]
 
@@ -116,7 +121,8 @@ def test_missing_and_corrupt_images_do_not_prevent_next_photo(app, screen, tmp_p
 def test_slideshow_waits_for_new_photos_cycles_and_exits_cleanly(app, monkeypatch, exit_event):
     slideshow = app.slideshow
     pygame = slideshow.pygame
-    app.cache.mkdir()
+    album = app.cache / "kids"
+    album.mkdir(parents=True)
     displayed = []
     messages = []
     ticks = count(0, 500)
@@ -142,10 +148,10 @@ def test_slideshow_waits_for_new_photos_cycles_and_exits_cleanly(app, monkeypatc
         waits.append(milliseconds)
         assert len(waits) < 20, "Slideshow did not progress or respond to exit"
         if len(waits) == 1:
-            (app.cache / "0-broken.jpg").write_bytes(b"bad image")
+            (album / "0-broken.jpg").write_bytes(b"bad image")
             for name in ("a.png", "b.png"):
                 with Image.new("RGB", (20, 10), "red") as source:
-                    source.save(app.cache / name)
+                    source.save(album / name)
 
     monkeypatch.setattr(slideshow, "display_photo", display)
     monkeypatch.setattr(slideshow, "display_message", message)
@@ -175,11 +181,15 @@ def test_form_update_applies_to_next_photo_and_invalid_input_keeps_current_inter
     clock = [0]
     displayed = []
     changed = [False]
-    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: ["a", "b", "c"])
+    photos = [app.cache / "kids" / name for name in ("a", "b", "c")]
+    photos[0].parent.mkdir(parents=True)
+    for photo in photos:
+        photo.touch()
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: photos)
     monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: clock[0])
 
     def display(screen, path):
-        displayed.append((path, clock[0]))
+        displayed.append((path.name, clock[0]))
         return True
 
     with TestClient(create_app(settings)) as browser:
@@ -222,7 +232,10 @@ def test_update_while_cache_empty_applies_to_first_photo(app, monkeypatch):
             clock[0] += 100
             if not photos:
                 browser.post("/settings", data={"display_seconds": "1"})
-                photos.extend(["a", "b"])
+                (app.cache / "kids").mkdir(parents=True)
+                photos.extend([app.cache / "kids" / name for name in ("a", "b")])
+                for photo in photos:
+                    photo.touch()
             assert clock[0] < 2000
 
         monkeypatch.setattr(slideshow.pygame.time, "wait", wait)
@@ -238,3 +251,126 @@ def test_display_initialization_error_releases_pygame(app, monkeypatch):
     with pytest.raises(app.slideshow.pygame.error):
         app.slideshow.show_slideshow()
     assert not app.slideshow.pygame.get_init()
+
+
+def test_sync_arrivals_play_next_then_resume_without_interrupting_current_photo(app, monkeypatch):
+    slideshow = app.slideshow
+    pygame = slideshow.pygame
+    new_photos = SimpleQueue()
+    album = app.cache / "kids"
+    album.mkdir(parents=True)
+    for name in ("a.png", "b.png", "c.png"):
+        with Image.new("RGB", (20, 10), "red") as source:
+            source.save(album / name)
+    monkeypatch.setattr(app.sync, "list_albums", lambda folder: [{"id": "kids", "name": "kids", "photos": [
+        {"id": "z", "name": "z.png"},
+        {"id": "broken", "name": "broken.png"},
+        {"id": "aa", "name": "aa.png"},
+    ]}])
+
+    def download(file_id, path):
+        if file_id == "broken":
+            path.write_bytes(b"not an image")
+        else:
+            with Image.new("RGB", (20, 10), "blue") as source:
+                source.save(path, format="PNG")
+
+    clock = [0]
+    displayed = []
+    render = slideshow.display_photo
+
+    def display(screen, path):
+        success = render(screen, path)
+        if success:
+            displayed.append((path.name, clock[0]))
+            if len(displayed) == 5:
+                pygame.event.post(pygame.event.Event(pygame.QUIT))
+        return success
+
+    def wait(milliseconds):
+        clock[0] += 100
+        if clock[0] == 100:
+            app.sync.sync_photos(new_photos)
+        assert clock[0] <= 4000, "Slideshow failed to resume its normal rotation"
+
+    monkeypatch.setattr(app.sync, "download_photo", download)
+    monkeypatch.setattr(slideshow, "display_photo", display)
+    monkeypatch.setattr(pygame.time, "get_ticks", lambda: clock[0])
+    monkeypatch.setattr(pygame.time, "wait", wait)
+    slideshow.show_slideshow(new_photos=new_photos)
+
+    assert displayed == [
+        ("a.png", 0), ("z.png", 1000), ("aa.png", 2000),
+        ("b.png", 3000), ("c.png", 4000),
+    ]
+    assert {p.name for p in album.iterdir()} == {
+        "a.png", "b.png", "c.png", "z.png", "aa.png", "broken.png",
+    }
+
+
+def test_priority_photos_are_not_repeated_in_the_same_cycle(app):
+    a, b, c = [app.cache / name for name in ("a.jpg", "b.jpg", "c.jpg")]
+    new_photos = SimpleQueue()
+    new_photos.put(c)
+    new_photos.put(c)
+    new_photos.put(app.cache / "unsupported.gif")
+    order = app.slideshow.prioritize_new_photos([a, b, c], new_photos)
+    assert next(order) == c
+    assert next(order) == a
+    new_photos.put(a)  # A notification arriving just after normal playback.
+    assert list(order) == [b]
+
+
+def test_arrival_after_last_regular_photo_does_not_wait_for_another_cycle(app):
+    a, z = [app.cache / name for name in ("a.jpg", "z.jpg")]
+    new_photos = SimpleQueue()
+    order = app.slideshow.prioritize_new_photos([a], new_photos)
+    assert next(order) == a
+    new_photos.put(z)
+    assert list(order) == [z]
+
+
+@pytest.mark.parametrize('selection', ['kids', 'empty'])
+def test_folder_change_applies_at_next_photo_and_filters_queued_arrivals(app, monkeypatch, selection):
+    from fastapi.testclient import TestClient
+    from client.control.app import create_app
+    from client.settings import RuntimeSettings
+
+    slideshow = app.slideshow
+    for folder, names in [('summer', ['a.jpg', 'b.jpg']), ('kids', ['a.jpg']), ('empty', [])]:
+        directory = app.cache / folder
+        directory.mkdir(parents=True)
+        for name in names:
+            (directory / name).touch()
+    settings = RuntimeSettings(1, folders=slideshow.get_cached_folders)
+    settings.set_folder('summer')
+    queue = SimpleQueue()
+    clock = [0]
+    shown = []
+    waiting = []
+    monkeypatch.setattr(slideshow.pygame.time, 'get_ticks', lambda: clock[0])
+    monkeypatch.setattr(slideshow, 'display_photo', lambda screen, path: shown.append((path.parent.name, path.name, clock[0])) or True)
+    monkeypatch.setattr(slideshow, 'display_message', lambda screen, text: waiting.append(clock[0]))
+    monkeypatch.setattr(slideshow, 'handle_events', lambda: clock[0] < 2200)
+    with TestClient(create_app(settings)) as browser:
+        def wait(milliseconds):
+            clock[0] += 100
+            if clock[0] == 100:
+                browser.post('/folder', data={'folder': selection})
+                other = app.cache / 'summer/new.jpg'
+                other.touch()
+                queue.put(other)
+                chosen = app.cache / selection / 'new.jpg'
+                if selection != 'empty':
+                    chosen.touch()
+                    queue.put(chosen)
+            assert clock[0] < 2500
+        monkeypatch.setattr(slideshow.pygame.time, 'wait', wait)
+        slideshow.show_slideshow(settings, new_photos=queue)
+    assert shown[0] == ('summer', 'a.jpg', 0)
+    if selection == 'kids':
+        assert shown[1] == ('kids', 'new.jpg', 1000)
+        assert all(folder == 'kids' for folder, _, _ in shown[1:])
+    else:
+        assert len(shown) == 1
+        assert waiting[0] == 1000
