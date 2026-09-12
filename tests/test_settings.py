@@ -45,6 +45,18 @@ def test_concurrent_updates_and_new_runtime_reset():
     assert RuntimeSettings(5).display_seconds == 5
 
 
+def test_snapshot_records_each_accepted_submission_only():
+    settings = RuntimeSettings(5)
+    assert settings.snapshot() == (5, 0)
+    settings.set_display_seconds(10)
+    assert settings.snapshot() == (10, 1)
+    settings.set_display_seconds(10)
+    assert settings.snapshot() == (10, 2)
+    with pytest.raises(ValueError):
+        settings.set_display_seconds(1.5)
+    assert settings.snapshot() == (10, 2)
+
+
 @pytest.mark.parametrize("name,value,valid", [
     ("DISPLAY_SECONDS", "5", True), ("DISPLAY_SECONDS", "5.0", False),
     ("DISPLAY_SECONDS", "0.2", False), ("DISPLAY_SECONDS", "0", False),

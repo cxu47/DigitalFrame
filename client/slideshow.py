@@ -3,7 +3,7 @@ import logging
 import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from .settings import RuntimeSettings
-from .overlay import ControlUrlOverlay
+from .overlay import SlideshowOverlay
 from PIL import ExifTags, Image, ImageOps
 from pillow_heif import register_heif_opener
 register_heif_opener()
@@ -149,11 +149,21 @@ def show_slideshow(settings=None, *, check_running=lambda: None,
         pygame.display.set_caption("Digital Frame")
         screen.fill("black")
         pygame.display.flip()
-        overlay = ControlUrlOverlay(screen, control_url, url_display_seconds)
+        overlay = SlideshowOverlay(screen, control_url, url_display_seconds)
         overlay.new_frame()
+        observed_revision = 0
+
+        def refresh_overlay():
+            nonlocal observed_revision
+            seconds, revision = settings.snapshot()
+            if revision != observed_revision:
+                overlay.show_message(f"Seconds per photo: {seconds}", 15)
+                observed_revision = revision
+            overlay.update()
+
         while running:
             check_running()
-            overlay.update()
+            refresh_overlay()
             photos = get_cached_photos()
             if not photos:
                 if not waiting_for_photos:
@@ -179,7 +189,7 @@ def show_slideshow(settings=None, *, check_running=lambda: None,
 
             for photo_path in photos:
                 check_running()
-                overlay.update()
+                refresh_overlay()
                 if not handle_events():
                     running = False
                     break
@@ -196,7 +206,7 @@ def show_slideshow(settings=None, *, check_running=lambda: None,
                     < duration_ms
                 ):
                     check_running()
-                    overlay.update()
+                    refresh_overlay()
                     running = handle_events()
 
                     if not running:

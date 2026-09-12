@@ -19,7 +19,7 @@ def pixels(screen):
 def test_url_is_at_top_left_and_restores_photo_at_deadline(screen, clock):
     screen.fill("red")
     original = pixels(screen)
-    banner = overlay.ControlUrlOverlay(screen, "http://192.168.1.42:8000", 30)
+    banner = overlay.SlideshowOverlay(screen, "http://192.168.1.42:8000", 30)
     banner.new_frame()
     assert pixels(screen) != original
     assert banner.rect.topleft == (8, 8)
@@ -37,7 +37,7 @@ def test_url_is_at_top_left_and_restores_photo_at_deadline(screen, clock):
 
 def test_expiration_restores_latest_photo_and_does_not_reset_for_each_photo(screen, clock):
     screen.fill("red")
-    banner = overlay.ControlUrlOverlay(screen, "http://192.168.1.42:8000", 30)
+    banner = overlay.SlideshowOverlay(screen, "http://192.168.1.42:8000", 30)
     banner.new_frame()
     clock[0] = 120
     screen.fill("blue")
@@ -57,7 +57,7 @@ def test_expiration_restores_latest_photo_and_does_not_reset_for_each_photo(scre
 def test_missing_address_or_disabled_overlay_leaves_pixels_unchanged(screen, clock, url, seconds):
     screen.fill("red")
     original = pixels(screen)
-    banner = overlay.ControlUrlOverlay(screen, url, seconds)
+    banner = overlay.SlideshowOverlay(screen, url, seconds)
     banner.new_frame()
     banner.update()
     assert pixels(screen) == original
@@ -66,7 +66,7 @@ def test_missing_address_or_disabled_overlay_leaves_pixels_unchanged(screen, clo
 def test_wait_is_shortened_to_remove_banner_on_time(screen, clock, monkeypatch):
     screen.fill("red")
     original = pixels(screen)
-    banner = overlay.ControlUrlOverlay(screen, "http://192.168.1.42:8000", 30)
+    banner = overlay.SlideshowOverlay(screen, "http://192.168.1.42:8000", 30)
     banner.new_frame()
     waits = []
 
@@ -78,6 +78,105 @@ def test_wait_is_shortened_to_remove_banner_on_time(screen, clock, monkeypatch):
     banner.wait(60000)
     assert waits == [30000]
     assert pixels(screen) == original
+
+
+def test_setting_message_replaces_url_and_restores_all_old_pixels(screen, clock):
+    screen.fill("red")
+    original = pixels(screen)
+    banner = overlay.SlideshowOverlay(screen, "http://192.168.1.42:8000", 30)
+    banner.new_frame()
+    old_rect = banner.rect.copy()
+    clock[0] = 105
+    banner.show_message("5 sec", 15)
+    assert banner.rect.topleft == old_rect.topleft
+    assert banner.rect.width < old_rect.width
+    assert screen.get_at((old_rect.right - 1, old_rect.top))[:3] == (255, 0, 0)
+    clock[0] = 119.99
+    banner.update()
+    assert pixels(screen) != original
+    clock[0] = 120
+    banner.update()
+    assert pixels(screen) == original
+
+
+def test_new_setting_restarts_timer_and_restores_the_latest_photo(screen, clock):
+    banner = overlay.SlideshowOverlay(screen, None, 0)
+    screen.fill("red")
+    banner.show_message("Seconds per photo: 5", 15)
+    clock[0] = 110
+    screen.fill("blue")
+    latest = pixels(screen)
+    banner.new_frame()
+    banner.show_message("Seconds per photo: 10", 15)
+    clock[0] = 115
+    banner.update()
+    assert pixels(screen) != latest
+    clock[0] = 125
+    banner.update()
+    assert pixels(screen) == latest
+
+
+@pytest.mark.parametrize("empty_cache", [False, True])
+@pytest.mark.parametrize("url_seconds", [0, 30])
+def test_form_updates_show_for_15_seconds_using_existing_overlay(
+    app, clock, monkeypatch, empty_cache, url_seconds,
+):
+    from fastapi.testclient import TestClient
+    from client.control.app import create_app
+    from client.settings import RuntimeSettings
+
+    slideshow = app.slideshow
+    settings = RuntimeSettings(60)
+    messages = []
+    observed = []
+    painted = []
+    original_show = overlay.SlideshowOverlay.show_message
+
+    def show_message(self, text, seconds):
+        messages.append((clock[0], text, seconds))
+        original_show(self, text, seconds)
+
+    monkeypatch.setattr(overlay.SlideshowOverlay, "show_message", show_message)
+    monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [] if empty_cache else ["a"])
+    monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: int(clock[0] * 1000))
+    monkeypatch.setattr(slideshow, "handle_events", lambda: clock[0] < 136)
+    monkeypatch.setattr(slideshow, "IDLE_SECONDS", 1)
+
+    def draw(screen, *args):
+        screen.fill("red")
+        painted.append(clock[0])
+        return True
+
+    monkeypatch.setattr(slideshow, "display_photo", draw)
+    monkeypatch.setattr(slideshow, "display_message", draw)
+
+    with TestClient(create_app(settings)) as browser:
+        def wait(milliseconds):
+            screen = slideshow.pygame.display.get_surface()
+            observed.append((clock[0], screen.get_at((8, 8))[:3]))
+            clock[0] += milliseconds / 1000
+            if clock[0] == 101:
+                assert browser.post("/settings", data={"display_seconds": "5.0"}).status_code == 422
+            if clock[0] in {102, 110, 120}:
+                value = "5" if clock[0] == 102 else "10"
+                assert browser.post("/settings", data={"display_seconds": value}).status_code == 200
+            assert clock[0] < 140
+
+        monkeypatch.setattr(slideshow.pygame.time, "wait", wait)
+        slideshow.show_slideshow(settings, control_url="http://192.168.1.42:8000",
+                                 url_display_seconds=url_seconds)
+
+    assert messages == [
+        (102, "Seconds per photo: 5", 15),
+        (110, "Seconds per photo: 10", 15),
+        (120, "Seconds per photo: 10", 15),
+    ]
+    assert (102, (0, 0, 0)) in observed
+    assert (134, (0, 0, 0)) in observed
+    assert (135, (255, 0, 0)) in observed
+    if not empty_cache:
+        assert painted == [100]  # Accepted updates did not interrupt the current photo.
+    assert not slideshow.pygame.get_init()
 
 
 @pytest.mark.parametrize("empty_cache", [False, True])

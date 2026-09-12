@@ -149,6 +149,8 @@ Address detection uses the operating system's route-selected local address, with
 
 Enter positive whole seconds and click **Apply**. The page uses a normal HTML form, without JavaScript, CSS, or internet assets. The server accepts integer text such as `5`, validates it, and redirects back to the page with the updated duration. Letters, blanks, decimal notation such as `5.0`, fractions, zero, and negative values show an error directly below the form. Invalid submissions preserve the active setting and keep the slideshow running; correct the input and submit again.
 
+Each accepted Apply action shows **“Seconds per photo: …” for 15 seconds** in the same top-left banner. It replaces any visible startup URL; another accepted submission replaces the message and restarts the 15-second timer. Invalid submissions do not trigger a message. Setting confirmations still appear when the startup URL overlay is disabled.
+
 Changes apply starting with the next successfully displayed photo. The current photo finishes its original interval. Settings live in memory: restarting restores `DISPLAY_SECONDS` from configuration. Refreshing the page displays the current setting. The panel starts before initial cloud sync and also works in cache-only mode without internet access. The `sync` command does not start it.
 
 The panel is intended for a trusted local network and has no login. No Wi-Fi setup or public hosting is included. Escape, window close, or Ctrl+C stops the panel with the display. An unavailable port produces a startup error; unexpected server exit stops the display with an error. Run one application process; a separate Uvicorn process or multiple workers would not share these runtime settings. Google authorization continues to use its separate port 8080.

@@ -1,4 +1,4 @@
-"""A temporary URL banner that restores only the pixels it covers."""
+"""Temporary slideshow messages sharing one banner and pixel restoration path."""
 
 import math
 import time
@@ -6,24 +6,40 @@ import time
 import pygame
 
 
-class ControlUrlOverlay:
+class SlideshowOverlay:
     def __init__(self, screen, url: str | None, seconds: int):
         self.screen = screen
         self.background = None
+        self._set_message(f"Control: {url}" if url else None, seconds)
+
+    def _set_message(self, text: str | None, seconds: int):
         self.label = None
-        if not url or seconds == 0:
+        if not text or seconds == 0:
             return
         self.deadline = time.monotonic() + seconds
         font = pygame.font.Font(None, 28)
-        self.label = font.render(f"Control: {url}", True, "white")
-        available = max(1, screen.get_width() - 24)
+        self.label = font.render(text, True, "white")
+        available = max(1, self.screen.get_width() - 24)
         if self.label.get_width() > available:
             scale = available / self.label.get_width()
             self.label = pygame.transform.smoothscale(
                 self.label, (available, max(1, int(self.label.get_height() * scale))),
             )
         self.rect = self.label.get_rect(topleft=(12, 12)).inflate(8, 8)
-        self.rect = self.rect.clip(screen.get_rect())
+        self.rect = self.rect.clip(self.screen.get_rect())
+
+    def show_message(self, text: str, seconds: int):
+        # Restore the entire previous rectangle before replacing it, since the
+        # next message may be shorter. Only the display thread calls this.
+        self._restore_background()
+        self._set_message(text, seconds)
+        self.new_frame()
+
+    def _restore_background(self):
+        if self.background is not None:
+            self.screen.blit(self.background, self.rect)
+            self.background = None
+            pygame.display.update(self.rect)
 
     def new_frame(self):
         # The caller has just redrawn the base frame, replacing any old banner.
@@ -37,9 +53,7 @@ class ControlUrlOverlay:
 
     def update(self):
         if self.background is not None and time.monotonic() >= self.deadline:
-            self.screen.blit(self.background, self.rect)
-            self.background = None
-            pygame.display.update(self.rect)
+            self._restore_background()
 
     def wait(self, milliseconds: int):
         # Do not leave the banner visible past its deadline if IDLE_SECONDS is
