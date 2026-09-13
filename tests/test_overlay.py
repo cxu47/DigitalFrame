@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("immediate_loader")
+
 from client import overlay
 
 
@@ -300,3 +302,95 @@ def test_folder_notifications_share_banner_and_report_automatic_fallback(
         assert painted == [100]  # Notifications leave the current photo and interval intact.
     assert settings.selected_folder is None
     assert not slideshow.pygame.get_init()
+
+
+def test_network_warning_is_red_persistent_and_restores_latest_photo(screen, clock, monkeypatch):
+    screen = overlay.pygame.display.set_mode((640, 120))
+    screen.fill('blue')
+    banner = overlay.SlideshowOverlay(screen, None, 0)
+    banner.set_network_problem(True)
+    assert banner.rect.topleft == (8, 8)
+    label = overlay.pygame.image.tobytes(banner.label, 'RGB')
+    assert any(label[i] > 100 and label[i + 1] == 0 and label[i + 2] == 0
+               for i in range(0, len(label), 3))
+    clock[0] = 10000
+    before = pixels(screen)
+    waits = []
+    monkeypatch.setattr(overlay.pygame.time, 'wait', lambda milliseconds: waits.append(milliseconds))
+    banner.wait(5000)
+    assert waits == [5000]  # Persistent alerts must not shorten waits to zero.
+    assert pixels(screen) == before
+    banner.show_message('Photo folder: kids', 15)
+    assert pixels(screen) == before  # Temporary messages cannot cover the red warning.
+    screen.fill('green')
+    latest = pixels(screen)
+    banner.new_frame()
+    assert pixels(screen) != latest
+    clock[0] += 20
+    banner.set_network_problem(False)
+    assert pixels(screen) == latest
+
+
+def test_recovery_restores_unexpired_setting_confirmation(screen, clock):
+    screen.fill('blue')
+    original = pixels(screen)
+    banner = overlay.SlideshowOverlay(screen, None, 0)
+    banner.set_network_problem(True)
+    banner.show_message('Seconds per photo: 5', 15)
+    clock[0] += 1
+    banner.set_network_problem(False)
+    assert banner.deadline == 115
+    assert pixels(screen) != original
+    clock[0] = 115
+    banner.update()
+    assert pixels(screen) == original
+
+
+@pytest.mark.parametrize('empty_cache', [False, True])
+@pytest.mark.parametrize('url_seconds', [0, 30])
+def test_network_warning_persists_while_slideshow_continues_and_clears_on_recovery(
+    app, clock, monkeypatch, empty_cache, url_seconds,
+):
+    import ssl
+    from client.settings import RuntimeSettings
+    from client.status import RuntimeStatus
+    slideshow = app.slideshow
+    status = RuntimeStatus()
+    settings = RuntimeSettings(5, folders=lambda: ['kids'])
+    photo = app.cache / 'kids/a.jpg'
+    photo.parent.mkdir(parents=True)
+    photo.touch()
+    painted = []
+    observed = []
+    def draw(screen, *args):
+        painted.append(clock[0])
+        screen.fill('blue')
+        return True
+    def wait(milliseconds):
+        screen = slideshow.pygame.display.get_surface()
+        observed.append((clock[0], screen.get_at((8, 8))[:3]))
+        clock[0] += milliseconds / 1000
+        if clock[0] == 101:
+            status.report_exception('Sync', ssl.SSLError('Wi-Fi disconnected'))
+        if clock[0] == 105:
+            settings.set_folder('kids')
+        if clock[0] == 110:
+            settings.set_display_seconds(5)
+        if clock[0] == 135:
+            status.clear('Sync')
+        assert clock[0] < 142
+    monkeypatch.setattr(slideshow, 'get_cached_photos', lambda: [] if empty_cache else [photo])
+    monkeypatch.setattr(slideshow, 'display_photo', draw)
+    monkeypatch.setattr(slideshow, 'display_message', draw)
+    monkeypatch.setattr(slideshow, 'handle_events', lambda: clock[0] < 141)
+    monkeypatch.setattr(slideshow, 'IDLE_SECONDS', 1)
+    monkeypatch.setattr(slideshow.pygame.time, 'get_ticks', lambda: int(clock[0] * 1000))
+    monkeypatch.setattr(slideshow.pygame.time, 'wait', wait)
+    slideshow.show_slideshow(settings, status=status, control_url='http://192.168.1.42:8000',
+                             url_display_seconds=url_seconds)
+    assert (101, (0, 0, 0)) in observed
+    assert (134, (0, 0, 0)) in observed  # Still visible beyond every transient timer.
+    assert (135, (0, 0, 255)) in observed
+    if not empty_cache:
+        assert painted == list(range(100, 141, 5))
+    assert not status.panel_snapshot()

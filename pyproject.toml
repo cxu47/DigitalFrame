@@ -22,6 +22,8 @@ dependencies = [
     "uvicorn==0.52.4",
     "python-multipart==0.0.32",
     "starlette==1.6.0",
+    "httplib2==0.32.0",
+    "google-auth-httplib2==0.4.1",
 ]
 
 [project.scripts]

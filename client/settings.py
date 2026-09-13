@@ -24,7 +24,6 @@ class RuntimeSettings:
         self._lock = Lock()
         self._folders = folders
         self._selected_folder = None
-        self._revision = -1
         self._notification_revision = -1
         self._notification = ""
         self.set_display_seconds(display_seconds)
@@ -63,15 +62,9 @@ class RuntimeSettings:
         with self._lock:
             return self._display_seconds
 
-    def snapshot(self) -> tuple[int, int]:
-        """Return the value and accepted-update revision together."""
-        with self._lock:
-            return self._display_seconds, self._revision
-
     def set_display_seconds(self, value: int) -> None:
         if type(value) is not int or value <= 0:
             raise ValueError(INTEGER_ERROR)
         with self._lock:
             self._display_seconds = value
-            self._revision += 1
             self._notify(f"Seconds per photo: {value}")

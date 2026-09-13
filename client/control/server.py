@@ -62,7 +62,7 @@ class ControlServer:
 
     def check_running(self):
         if self._finished.is_set():
-            raise RuntimeError("Control panel stopped unexpectedly; stopping the slideshow.") from self._error
+            raise RuntimeError("Control panel stopped unexpectedly.") from self._error
 
     def stop(self):
         self.server.should_exit = True
@@ -70,3 +70,57 @@ class ControlServer:
         if self._thread.is_alive():
             self.server.force_exit = True
             logger.error("Control panel did not stop within %.1f seconds", self.shutdown_timeout)
+
+
+class ControlSupervisor:
+    """Retry a failed listener off the display thread and retain its error history."""
+
+    def __init__(self, app, host, port, status, retry_seconds=15):
+        self.app, self.host, self.port = app, host, port
+        self.status = status
+        self.retry_seconds = retry_seconds
+        self.url = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="control-supervisor", daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def _run(self):
+        panel = None
+        try:
+            while not self._stop.is_set():
+                try:
+                    if panel is None:
+                        panel = ControlServer(self.app, self.host, self.port)
+                        panel.start()
+                    panel.check_running()
+                    self.status.clear("Control server")
+                    detected = control_url(self.host, self.port)
+                    if detected:
+                        if detected != self.url:
+                            logger.info("Control panel: %s", detected)
+                        self.url = detected
+                        self.status.clear("Network address")
+                    else:
+                        self.status.report("Network address", "No network address is available. Cached playback continues.", network=True)
+                except Exception as exc:
+                    logger.exception("Control server unavailable; cached playback continues")
+                    self.status.report_exception("Control server", exc)
+                    if panel is not None:
+                        panel.stop()
+                        # Never create another listener while this one is still
+                        # exiting, even if its bounded shutdown timed out.
+                        if not panel._thread.is_alive():
+                            panel = None
+                if self._stop.wait(self.retry_seconds):
+                    break
+        finally:
+            if panel is not None:
+                panel.stop()
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=6)
+        if self._thread.is_alive():
+            logger.warning("Control server is still completing shutdown")

@@ -81,137 +81,107 @@ def test_sync_works_without_pygame_and_display_commands_explain_missing_dependen
         assert "uv sync --locked --no-dev" in result.output
 
 
-def test_frame_syncs_before_starting_background_worker_and_slideshow(app, monkeypatch):
-    calls = []
-
-    class Worker:
-        def __init__(self, *, target, args, daemon, name):
-            assert target is app.main.sync_loop
-            assert args == (queue[0],)
-            assert daemon is True
-
-        def start(self):
-            calls.append("background")
-
-    queue = []
-
-    def sync_photos(*, new_photos):
-        queue.append(new_photos)
-        new_photos.put("new photo")
-        calls.append("initial sync")
-
-    monkeypatch.setattr(app.main, "sync_photos", sync_photos)
-    monkeypatch.setattr(app.main.threading, "Thread", Worker)
-    def run_display(*, before_display, new_photos):
-        before_display()
-        assert new_photos is queue[0]
-        assert new_photos.get_nowait() == "new photo"
-        calls.append("slideshow")
-
-    monkeypatch.setattr(app.main, "run_display", run_display)
-
-    app.main.main()
-
-    assert calls == ["initial sync", "background", "slideshow"]
-
-
-def test_background_sync_repeats_at_configured_interval(app, monkeypatch):
-    from queue import SimpleQueue
-
-    calls = []
-    queue = SimpleQueue()
-
-    class StopLoop(Exception):
-        pass
-
-    def sleep(seconds):
-        if len(calls) == 4:
-            raise StopLoop
-        calls.append(seconds)
-
-    monkeypatch.setattr(app.main, "SYNC_INTERVAL", 42)
-    monkeypatch.setattr(app.main.time, "sleep", sleep)
-    def sync_photos(*, new_photos):
-        assert new_photos is queue
-        calls.append("sync")
-
-    monkeypatch.setattr(app.main, "sync_photos", sync_photos)
-
-    with pytest.raises(StopLoop):
-        app.main.sync_loop(queue)
-
-    assert calls == [42, "sync", 42, "sync"]
-
-
-@pytest.mark.parametrize("failure_stage", [None, "sync", "display", "interrupt", "server"])
-def test_panel_shares_settings_and_stops_on_every_runtime_exit(app, monkeypatch, failure_stage):
+@pytest.mark.parametrize('failure_stage', [None, 'display', 'interrupt'])
+def test_runtime_starts_workers_without_waiting_for_sync_and_always_stops_them(app, monkeypatch, failure_stage):
     from fastapi.testclient import TestClient
     from client import runtime
-
     calls = []
-
     class Panel:
-        url = "http://192.168.1.42:8000"
-
-        def __init__(self, web_app, host, port):
-            assert (host, port) == ("0.0.0.0", 8000)
+        url = 'http://192.168.1.42:8000'
+        def __init__(self, web_app, host, port, status):
             self.browser = TestClient(web_app)
-
         def start(self):
-            calls.append("panel")
-            self.browser.post("/settings", data={"display_seconds": "10"})
-
-        def check_running(self):
-            if failure_stage == "server":
-                raise RuntimeError("server failed")
-
+            calls.append('panel')
+            self.browser.post('/settings', data={'display_seconds': '10'})
         def stop(self):
-            calls.append("stop")
+            calls.append('panel stop')
             self.browser.close()
-
-    def before_display():
-        calls.append("sync")
-        if failure_stage == "sync":
-            raise RuntimeError("sync failed")
-
-    queue = object()
-
-    def display(settings, *, check_running, control_url, url_display_seconds, new_photos):
-        calls.append("display")
+    class Worker:
+        def __init__(self, queue, status, index, interval):
+            assert interval == 30
+        def start(self):
+            calls.append('worker scheduled')
+        def stop(self):
+            calls.append('worker stop')
+    def display(settings, *, control_url, url_display_seconds, new_photos, status, index):
+        calls.append('display')
         assert settings.display_seconds == 10
-        assert control_url == Panel.url
-        assert url_display_seconds == 30
-        assert new_photos is queue
-        check_running()
-        if failure_stage == "display":
-            raise RuntimeError("display failed")
-        if failure_stage == "interrupt":
+        assert control_url() == Panel.url
+        if failure_stage == 'display':
+            raise RuntimeError('display failed')
+        if failure_stage == 'interrupt':
             raise KeyboardInterrupt
-
-    monkeypatch.setattr(runtime, "ControlServer", Panel)
-    monkeypatch.setattr(app.slideshow, "show_slideshow", display)
+    monkeypatch.setattr(runtime, 'ControlSupervisor', Panel)
+    monkeypatch.setattr(app.main, 'SyncWorker', Worker)
+    monkeypatch.setattr(app.slideshow, 'show_slideshow', display)
     if failure_stage:
-        exception = KeyboardInterrupt if failure_stage == "interrupt" else RuntimeError
-        with pytest.raises(exception):
-            runtime.run_display(before_display=before_display, new_photos=queue)
+        with pytest.raises(KeyboardInterrupt if failure_stage == 'interrupt' else RuntimeError):
+            runtime.run_display(sync_interval=30)
     else:
-        runtime.run_display(before_display=before_display, new_photos=queue)
-    assert calls[:2] == ["panel", "sync"]
-    assert calls[-1] == "stop"
-    assert ("display" in calls) is (failure_stage not in {"sync", "server"})
+        runtime.run_display(sync_interval=30)
+    assert calls == ['panel', 'worker scheduled', 'display', 'worker stop', 'panel stop']
 
 
 def test_cache_only_runtime_does_not_sync(app, monkeypatch):
     from client import runtime
-
     panel = Mock()
     display = Mock()
-    sync = Mock(side_effect=AssertionError("Cache-only display accessed Drive"))
-    monkeypatch.setattr(runtime, "ControlServer", Mock(return_value=panel))
-    monkeypatch.setattr(app.slideshow, "show_slideshow", display)
-    monkeypatch.setattr(app.sync, "sync_photos", sync)
+    sync = Mock(side_effect=AssertionError('Cache-only display accessed Drive'))
+    monkeypatch.setattr(runtime, 'ControlSupervisor', Mock(return_value=panel))
+    monkeypatch.setattr(app.slideshow, 'show_slideshow', display)
+    monkeypatch.setattr(app.sync, 'sync_photos', sync)
     runtime.main()
     sync.assert_not_called()
-    panel.start.assert_called_once()
     display.assert_called_once()
     panel.stop.assert_called_once()
+
+
+def test_background_ssl_failure_retries_and_stop_wakes_long_interval(app, monkeypatch):
+    from queue import SimpleQueue
+    from threading import Event
+    import ssl
+    from client.status import RuntimeStatus
+    status = RuntimeStatus()
+    retried = Event()
+    attempts = []
+    def sync(queue, *, stop_event, status):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise ssl.SSLError('Wi-Fi lost')
+        retried.set()
+        stop_event.set()
+    monkeypatch.setattr(app.sync, 'sync_photos', sync)
+    worker = app.main.SyncWorker(SimpleQueue(), status, Mock(), .01)
+    worker.start()
+    assert retried.wait(2)
+    worker.stop()
+    assert not worker.thread.is_alive()
+    assert len(attempts) == 2
+    assert 'SSLError' in status.snapshot()[0]['message']
+    worker = app.main.SyncWorker(SimpleQueue(), status, Mock(), 3600)
+    worker.start()
+    worker.stop()
+    assert not worker.thread.is_alive()
+
+
+def test_sync_cli_has_nonzero_exit_on_network_failure(app, monkeypatch):
+    from client import cli
+    monkeypatch.setattr(app.sync, 'list_albums', Mock(side_effect=ConnectionError('Offline')))
+    result = CliRunner().invoke(cli.app, ['sync'])
+    assert result.exit_code == 1
+    assert 'Offline' in result.output
+
+
+@pytest.mark.parametrize('command', ['slideshow', 'sync'])
+def test_configuration_is_only_required_for_relevant_workflow(command):
+    env = os.environ.copy()
+    if command == 'slideshow':
+        for key in ['SECRETS_FOLDER', 'GOOGLE_CREDENTIALS_FILE', 'GOOGLE_TOKEN_FILE', 'GOOGLE_DRIVE_FOLDER_ID', 'SYNC_INTERVAL']:
+            env.pop(key, None)
+        code = 'import client.slideshow; import client.runtime'
+    else:
+        for key in ['DISPLAY_SECONDS', 'IDLE_SECONDS', 'CONTROL_HOST', 'CONTROL_PORT']:
+            env[key] = 'invalid-unused-value'
+        code = 'import client.sync'
+    result = subprocess.run([sys.executable, '-c', code], env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr

@@ -1,11 +1,18 @@
-"""Exercise album reconciliation with real cache files and offline Drive metadata."""
+"""Recover actual cache bytes from current Drive metadata, regardless of manifest state."""
 
+import hashlib
+from pathlib import Path
 from queue import SimpleQueue
+from threading import Event
 from unittest.mock import Mock
 
+import pytest
 
-def photo(file_id, name=None, version="v1"):
-    return {"id": file_id, "name": name or f"{file_id}.jpg", "md5Checksum": version}
+
+def photo(file_id, name=None, data=None):
+    data = file_id.encode() if data is None else data
+    return {"id": file_id, "name": name or f"{file_id}.jpg",
+            "md5Checksum": hashlib.md5(data).hexdigest(), "size": str(len(data))}
 
 
 def album(folder_id, photos=(), name=None):
@@ -14,148 +21,208 @@ def album(folder_id, photos=(), name=None):
 
 def setup_sync(app, monkeypatch, remote):
     listing = Mock(return_value=remote)
-    download = Mock(side_effect=lambda file_id, destination: destination.write_bytes(file_id.encode()))
+    download = Mock(side_effect=lambda file_id, destination, **kwargs: destination.write_bytes(file_id.encode()))
     monkeypatch.setattr(app.sync, "list_albums", listing)
     monkeypatch.setattr(app.sync, "download_photo", download)
     return listing, download
 
 
 def cached(app):
-    return {str(path.relative_to(app.cache)): path.read_bytes()
-            for path in app.slideshow.get_cached_photos()}
+    return {str(path.relative_to(app.cache)): path.read_bytes() for path in app.slideshow.get_cached_photos()}
 
 
-def test_sync_mirrors_albums_and_empty_folders_without_repeated_downloads(app, monkeypatch):
-    remote = [album("kids", [photo("one", "family.jpg")]),
-              album("summer", [photo("two", "family.jpg")]), album("empty")]
-    listing, download = setup_sync(app, monkeypatch, remote)
+def test_sync_mirrors_albums_empty_folders_and_reuses_one_service(app, monkeypatch):
+    listing, download = setup_sync(app, monkeypatch, [album("kids", [photo("one", "family.jpg")]),
+        album("summer", [photo("two", "family.jpg")]), album("empty")])
     queue = SimpleQueue()
-    app.sync.sync_photos(queue)
+    assert app.sync.sync_photos(queue).success
     assert cached(app) == {"kids/family.jpg": b"one", "summer/family.jpg": b"two"}
     assert app.slideshow.get_cached_folders() == ["empty", "kids", "summer"]
+    service = app.sync.get_drive_service.return_value
+    listing.assert_called_once_with("test-folder", service=service, stop_event=None)
+    assert all(call.kwargs['service'] is service for call in download.call_args_list)
+    service.close.assert_called_once()
     assert queue.get_nowait() == app.cache / "kids/family.jpg"
     assert queue.get_nowait() == app.cache / "summer/family.jpg"
-    app.sync.sync_photos(queue)
+    assert app.sync.sync_photos(queue).success
     assert download.call_count == 2
     assert queue.empty()
-    listing.assert_called_with("test-folder")
-    (app.cache / "kids/family.jpg").unlink()
-    app.sync.sync_photos()
-    assert download.call_count == 3  # Repair a missing local file even with the same hash.
 
 
-def test_duplicate_and_unsafe_names_stay_distinct_and_inside_cache(app, monkeypatch):
-    remote = [album("a", [photo("one", "../photo.jpg"), photo("two", "../photo.jpg")], "../kids"),
-              album("b", [photo("three")], "../kids")]
-    _, download = setup_sync(app, monkeypatch, remote)
+@pytest.mark.parametrize('damage', ['missing', 'empty', 'wrong_same_size'])
+def test_changed_cache_bytes_are_repaired_even_with_unchanged_manifest(app, monkeypatch, damage):
+    _, download = setup_sync(app, monkeypatch, [album('kids', [photo('one')])])
     app.sync.sync_photos()
-    files = app.slideshow.get_cached_photos()
-    assert len(files) == 3
-    assert {p.read_bytes() for p in files} == {b"one", b"two", b"three"}
-    assert all(p.parent.parent == app.cache for p in files)
-    assert len(app.slideshow.get_cached_folders()) == 2
-    app.sync.sync_photos()
-    assert download.call_count == 3
+    path = app.cache / 'kids/one.jpg'
+    if damage == 'missing':
+        path.unlink()
+    else:
+        path.write_bytes(b'' if damage == 'empty' else b'BAD')
+    assert app.sync.sync_photos().success
+    assert path.read_bytes() == b'one'
+    assert download.call_count == 2
 
 
-def test_renames_moves_edits_deletions_and_folder_swaps(app, monkeypatch):
-    listing, download = setup_sync(app, monkeypatch, [
-        album("a", [photo("one"), photo("deleted")], "kids"),
-        album("b", [photo("two")], "summer"), album("empty"),
-    ])
+@pytest.mark.parametrize('manifest_state', ['missing', 'corrupt'])
+def test_manifest_rebuild_uses_drive_and_removes_stale_album_photos(app, monkeypatch, manifest_state):
+    listing, _ = setup_sync(app, monkeypatch, [album('kids', [photo('one'), photo('deleted')])])
     app.sync.sync_photos()
-    download.reset_mock()
-    listing.return_value = [album("a", [photo("two", "renamed.jpg")], "summer"),
-                            album("b", [photo("one")], "kids")]
+    manifest = app.cache / app.sync.MANIFEST
+    if manifest_state == 'missing':
+        manifest.unlink()
+    else:
+        manifest.write_text('{bad json')
+    listing.return_value = [album('kids', [photo('one')])]
+    assert app.sync.sync_photos().success
+    assert cached(app) == {'kids/one.jpg': b'one'}
+
+
+def test_interrupted_filename_swap_recovers_from_drive_checksums(app, monkeypatch):
+    listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('a'), photo('b')])])
     app.sync.sync_photos()
-    assert cached(app) == {"summer/renamed.jpg": b"two", "kids/one.jpg": b"one"}
-    assert not (app.cache / "empty").exists()
-    download.assert_not_called()
-    listing.return_value = [album("b", [photo("one", version="v2")], "fun things")]
-    download.side_effect = lambda file_id, path: path.write_bytes(b"edited")
+    listing.return_value = [album('kids', [photo('a', 'b.jpg'), photo('b', 'a.jpg')])]
+    replace = Path.replace
+    with monkeypatch.context() as interrupted:
+        def fail_manifest(path, target):
+            if Path(target).name == app.sync.MANIFEST:
+                raise OSError('Interrupted manifest write')
+            return replace(path, target)
+        interrupted.setattr(Path, 'replace', fail_manifest)
+        assert not app.sync.sync_photos().success
+    assert app.sync.sync_photos().success
+    assert cached(app) == {'kids/a.jpg': b'b', 'kids/b.jpg': b'a'}
+    assert download.call_count == 2
+
+
+def test_rename_move_edit_and_deletion(app, monkeypatch):
+    listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('one'), photo('deleted')]), album('empty')])
     app.sync.sync_photos()
-    assert cached(app) == {"fun things/one.jpg": b"edited"}
-    assert app.slideshow.get_cached_folders() == ["fun things"]
-    download.assert_called_once()
+    listing.return_value = [album('renamed', [photo('one', 'moved.jpg')])]
+    assert app.sync.sync_photos().success
+    assert cached(app) == {'renamed/moved.jpg': b'one'}
+    assert download.call_count == 2
+    listing.return_value = [album('renamed', [photo('one', 'moved.jpg', b'edited')])]
+    download.side_effect = lambda file_id, path, **kwargs: path.write_bytes(b'edited')
+    assert app.sync.sync_photos().success
+    assert cached(app) == {'renamed/moved.jpg': b'edited'}
     listing.return_value = []
-    app.sync.sync_photos()
-    assert cached(app) == {}
+    assert app.sync.sync_photos().success
     assert app.slideshow.get_cached_folders() == []
 
 
-def test_swapping_photo_names_reuses_correct_content(app, monkeypatch):
-    listing, download = setup_sync(app, monkeypatch, [album("kids", [photo("a"), photo("b")])])
-    app.sync.sync_photos()
-    listing.return_value = [album("kids", [photo("a", "b.jpg"), photo("b", "a.jpg")])]
-    app.sync.sync_photos()
-    assert cached(app) == {"kids/a.jpg": b"b", "kids/b.jpg": b"a"}
-    assert download.call_count == 2
+def test_duplicate_unsafe_and_long_names_preserve_supported_extensions(app, monkeypatch):
+    _, download = setup_sync(app, monkeypatch, [album('a', [photo('one', '../photo.jpg'), photo('two', '../photo.jpg'),
+        photo('long', 'x' * 240 + '.jpg')], '../kids'), album('b', [photo('three')], '../kids')])
+    assert app.sync.sync_photos().success
+    assert len(cached(app)) == 4
+    assert {p.read_bytes() for p in app.slideshow.get_cached_photos()} == {b'one', b'two', b'three', b'long'}
+    assert app.sync.sync_photos().success
+    assert download.call_count == 4
 
 
-def test_listing_outage_preserves_entire_cache(app, monkeypatch):
-    listing, download = setup_sync(app, monkeypatch, [album("kids", [photo("one")])])
+def test_ssl_listing_failure_preserves_cache_and_is_visible_until_recovery(app, monkeypatch):
+    import ssl
+    from client.status import RuntimeStatus
+    status = RuntimeStatus()
+    listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('one')])])
     app.sync.sync_photos()
     manifest = (app.cache / app.sync.MANIFEST).read_bytes()
-    listing.side_effect = ConnectionError("Offline halfway through folder listing")
-    app.sync.sync_photos()
-    assert cached(app) == {"kids/one.jpg": b"one"}
+    listing.side_effect = ssl.SSLError('Wi-Fi disconnected')
+    assert not app.sync.sync_photos(status=status).success
+    assert cached(app) == {'kids/one.jpg': b'one'}
     assert (app.cache / app.sync.MANIFEST).read_bytes() == manifest
+    assert status.snapshot()[0]['active']
+    assert 'SSLError' in status.snapshot()[0]['message']
+    assert status.network_problem()
+    assert not status.panel_snapshot()
+    listing.side_effect = None
+    assert app.sync.sync_photos(status=status).success
+    assert not status.snapshot()[0]['active']
+    assert not status.network_problem()
+    assert not status.panel_snapshot()
     assert download.call_count == 1
 
 
-def test_partial_downloads_retry_and_publish_immediately(app, monkeypatch):
-    _, download = setup_sync(app, monkeypatch, [album("kids", [photo("one"), photo("two")])])
+def test_failed_update_keeps_old_bytes_and_never_publishes_bad_download(app, monkeypatch):
+    listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('one')])])
+    app.sync.sync_photos()
+    listing.return_value = [album('kids', [photo('one', data=b'edited')])]
+    queue = SimpleQueue()
+    download.side_effect = lambda file_id, path, **kwargs: path.write_bytes(b'wrong!')
+    assert not app.sync.sync_photos(queue).success
+    assert cached(app) == {'kids/one.jpg': b'one'}
+    assert queue.empty()
+    download.side_effect = lambda file_id, path, **kwargs: path.write_bytes(b'edited')
+    assert app.sync.sync_photos(queue).success
+    assert queue.get_nowait() == app.cache / 'kids/one.jpg'
+    assert cached(app) == {'kids/one.jpg': b'edited'}
+
+
+def test_partial_failure_retries_and_each_photo_is_queued_immediately(app, monkeypatch):
+    _, download = setup_sync(app, monkeypatch, [album('kids', [photo('one'), photo('two')])])
     queue = SimpleQueue()
     attempts = []
-
-    def transfer(file_id, destination):
+    def transfer(file_id, path, **kwargs):
         attempts.append(file_id)
-        destination.write_bytes(b"partial")
-        assert destination.suffix == ".part"
-        assert destination not in app.slideshow.get_cached_photos()
-        if attempts == ["one"]:
-            raise ConnectionError("Interrupted")
-        destination.write_bytes(b"complete")
-
-    download.side_effect = transfer
-    app.sync.sync_photos(queue)
-    assert cached(app) == {"kids/two.jpg": b"complete"}
-    assert queue.get_nowait() == app.cache / "kids/two.jpg"
-    assert queue.empty()
-    assert not list(app.cache.glob("*/*.part"))
-    app.sync.sync_photos(queue)
-    assert attempts == ["one", "two", "one"]
-    assert queue.get_nowait() == app.cache / "kids/one.jpg"
-    assert queue.empty()
-
-
-def test_failed_update_keeps_old_photo_and_retries_same_remote_hash(app, monkeypatch):
-    listing, download = setup_sync(app, monkeypatch, [album("kids", [photo("one")])])
-    app.sync.sync_photos()
-    listing.return_value = [album("kids", [photo("one", version="v2")])]
-    download.side_effect = ConnectionError("Offline")
-    app.sync.sync_photos()
-    assert cached(app) == {"kids/one.jpg": b"one"}
-    download.side_effect = lambda file_id, path: path.write_bytes(b"edited")
-    app.sync.sync_photos()
-    assert cached(app) == {"kids/one.jpg": b"edited"}
-
-
-def test_each_completed_file_is_queued_before_next_download(app, monkeypatch):
-    _, download = setup_sync(app, monkeypatch, [album("kids", [photo("one"), photo("two")])])
-    queue = SimpleQueue()
-
-    def transfer(file_id, path):
-        if file_id == "two":
-            published = queue.get_nowait()
-            assert published.read_bytes() == b"complete"
-            assert published == app.cache / "kids/one.jpg"
         assert queue.empty()
-        path.write_bytes(b"complete")
-        assert queue.empty()
-
+        path.write_bytes(b'partial')
+        if attempts == ['one']:
+            raise ConnectionError('Interrupted')
+        path.write_bytes(file_id.encode())
     download.side_effect = transfer
-    app.sync.sync_photos(queue)
-    assert queue.get_nowait() == app.cache / "kids/two.jpg"
-    app.sync.sync_photos(queue)
-    assert queue.empty()
+    assert not app.sync.sync_photos(queue).success
+    assert queue.get_nowait() == app.cache / 'kids/two.jpg'
+    assert app.sync.sync_photos(queue).success
+    assert queue.get_nowait() == app.cache / 'kids/one.jpg'
+    assert attempts == ['one', 'two', 'one']
+    assert not list(app.cache.glob('.sync-*'))
+
+
+def test_second_process_lock_and_cooperative_cancellation(app, monkeypatch):
+    _, download = setup_sync(app, monkeypatch, [album('kids', [photo('one')])])
+    with app.sync.cache_lock():
+        result = app.sync.sync_photos()
+        assert not result.success
+        assert 'Another sync' in result.error
+    stop = Event()
+    stop.set()
+    assert app.sync.sync_photos(stop_event=stop).cancelled
+    download.assert_not_called()
+    assert app.sync.sync_photos().success
+
+
+def test_missing_remote_checksum_forces_download_instead_of_trusting_manifest(app, monkeypatch):
+    remote = photo('one')
+    remote.pop('md5Checksum')
+    _, download = setup_sync(app, monkeypatch, [album('kids', [remote])])
+    assert app.sync.sync_photos().success
+    assert app.sync.sync_photos().success
+    assert download.call_count == 2
+
+
+def test_partly_applied_swap_recovers_missing_bytes_from_drive(app, monkeypatch):
+    listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('a'), photo('b')])])
+    app.sync.sync_photos()
+    listing.return_value = [album('kids', [photo('a', 'b.jpg'), photo('b', 'a.jpg')])]
+    replace = Path.replace
+    with monkeypatch.context() as interrupted:
+        def fail_second_photo(path, target):
+            if Path(target).name == 'a.jpg':
+                raise OSError('Interrupted second publication')
+            return replace(path, target)
+        interrupted.setattr(Path, 'replace', fail_second_photo)
+        assert not app.sync.sync_photos().success
+    assert app.sync.sync_photos().success
+    assert cached(app) == {'kids/a.jpg': b'b', 'kids/b.jpg': b'a'}
+    assert download.call_count == 3  # Lost b bytes were fetched from Drive, not a backup.
+
+
+def test_lock_is_enforced_across_processes(app):
+    import subprocess
+    import sys
+    with app.sync.cache_lock():
+        process = subprocess.run([sys.executable, '-c',
+            'from client.sync import sync_photos; result = sync_photos(); '
+            'assert not result.success and "Another sync" in result.error'],
+            capture_output=True, text=True, timeout=10)
+    assert process.returncode == 0, process.stderr

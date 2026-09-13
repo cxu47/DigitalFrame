@@ -32,12 +32,12 @@ The DigitalFrame client is designed to:
 
 - Google Drive authentication using OAuth credentials
 - Remote photo listing and downloading
-- Background synchronization at a configurable interval
+- Background synchronization at a configurable interval, with cached playback available during network outages
 - Newly downloaded photos play next after the current photo finishes, without renaming files
 - One-level photo albums mirrored in the local cache, with an All/folder selector
-- Manifest-based detection of additions, edits, moves, renames, and deletions
+- Drive metadata and content checksums detect additions, edits, moves, renames, deletions, and cache corruption
 - Temporary download files to prevent incomplete images from being displayed
-- Continuous slideshow using Pygame and Pillow
+- Continuous slideshow using Pygame and Pillow, with one upcoming image prepared in a worker
 - Configurable image display duration through `DISPLAY_SECONDS` and a plain HTML control panel on the local Wi-Fi
 - Automatic EXIF orientation correction
 - Fullscreen display at the current screen resolution, with proportional photo scaling and centered black bars
@@ -47,9 +47,9 @@ The DigitalFrame client is designed to:
 ## Important Limitations
 
 - Only photos directly inside immediate child folders are included. Loose root photos, deeper nested folders, and Drive shortcuts are ignored.
-- Keep one syncing process per cache directory. The manifest tracks files created by sync; unrelated local files and legacy root photos are left in place.
+- A process lock permits one sync per cache directory. Album photos in that directory are disposable copies of Drive; a successful sync removes album photos absent from Drive. Legacy loose root photos and unrelated non-photo files are left in place.
 - The project is currently a prototype and has not undergone a complete security review.
-- Google Drive requests use the Google API client's transport timeout behavior; the application does not configure its own request timeout.
+- A slow image decode can still extend a photo interval if the next image is not ready in time. The current photo stays visible while loading finishes; keyboard handling and notifications continue.
 
 ## Potential Upgrades
 
@@ -58,9 +58,7 @@ The DigitalFrame client is designed to:
 - Encrypted local storage
 - Improved authentication and security protocols
 - Configurable overwrite and duplicate-handling policies
-- Cache validation during startup
 - User-configurable cloud provider or server URL
-- Improved network failure recovery
 
 ## Development Progress
 
@@ -121,7 +119,7 @@ For an **existing board with a working custom Pygame/SDL build**, validate this 
 
 If the board needs a custom wheel, build or obtain one for its interpreter ABI and platform, record the build procedure and artifact hash, and declare a platform-specific Pygame source in `pyproject.toml` before regenerating `uv.lock`. This source must resolve reproducibly on a fresh board. The old `--inexact` approach does not establish that the now-declared Pygame dependency uses the required custom graphics stack. Keep the existing installation until visible output is verified. OS graphics libraries remain system prerequisites, and a copied laptop `.venv` is not a deployment method. [uv package sources](https://docs.astral.sh/uv/concepts/projects/dependencies/)
 
-In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JSON at `client/secrets/google_credentials.json` for the example configuration. Create cache/secrets directories if using custom paths. Relative paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables override `.env`. Timing values are seconds; `DISPLAY_SECONDS` must be a positive integer (for example `5`, not `5.0`). `IDLE_SECONDS` and `SYNC_INTERVAL` still accept decimals. `LOG_LEVEL` defaults to `INFO`.
+In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JSON at `client/secrets/google_credentials.json` for the example configuration. Create cache/secrets directories if using custom paths. Relative paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables override `.env`. Timing values are seconds; `DISPLAY_SECONDS` must be a positive integer (for example `5`, not `5.0`). `IDLE_SECONDS`, `SYNC_INTERVAL`, and `NETWORK_TIMEOUT` accept finite decimal values of at least 0.001 seconds. `NETWORK_TIMEOUT` defaults to 10 seconds per HTTP operation. Configuration is checked per command: cache-only playback needs no Google credentials or sync interval, and one-shot sync needs no display/control settings. `LOG_LEVEL` defaults to `INFO`.
 
 ### Running the frame
 
@@ -138,13 +136,13 @@ The unified installation supplies Pygame and the control server for `run` and `s
 
 At each startup, the slideshow automatically uses the selected display's current resolution in fullscreen, following [Pygame's display sizing behavior](https://www.pygame.org/docs/ref/display.html#pygame.display.set_mode). It reads the resolution through the OS/SDL display backend; no screen dimensions or aspect ratio need to be configured in the app. Photos keep their original aspect ratio after EXIF orientation correction and fit entirely on screen, with black bars on the sides or top and bottom as needed. For example, a 4:3 photo on a 1280×720 display occupies 960×720 pixels with 160-pixel bars on each side; this is an example, not a fixed output size. The startup log reports the display backend, rendering surface size, and window size. Restart the app after switching HDMI displays or changing the OS display mode. If photos still appear stretched, check that the OS display resolution matches the panel's aspect ratio and that the monitor's own scaling setting preserves proportions.
 
-Initial Drive authorization prints a URL without opening a browser and waits for a localhost callback on port 8080. The authorizing browser must reach that callback; use SSH port forwarding when authorizing a remote board. Tokens are created/refreshed in the configured secrets directory. The `slideshow` command does not initiate authorization.
+Initial Drive authorization prints a URL without opening a browser and waits up to 60 seconds for a localhost callback on port 8080; a timeout is reported and retried by background sync. The authorizing browser must reach that callback; use SSH port forwarding when authorizing a remote board. Tokens are created/refreshed in the configured secrets directory. The `slideshow` command does not initiate authorization.
 
 `--no-sync` keeps normal startup separate from package changes. After installation, `.venv/bin/digitalframe` runs the same commands directly. `python -m client` exposes the same CLI in the selected environment; the existing `python -m client.main`, `python -m client.slideshow`, and `python -m client.sync` entry points still work. Installation is editable from this checkout; keep the checkout available and run from its root. Standalone wheel deployment with relocated configuration/data is not supported by this workflow.
 
 During `digitalframe run`, each successfully downloaded photo enters a shared in-memory queue as soon as its complete file is published to the cache. The current photo finishes its configured interval, then queued photos play in download-completion order before the regular alphabetical rotation resumes where it left off. Photos promoted from that rotation are skipped at their original position for the current cycle. Ordinary filenames and photo metadata stay unchanged; duplicate or unsafe filenames are adjusted as described below. Failed downloads are not queued; unreadable images are skipped. Already cached files are not promoted again on every sync.
 
-New arrivals are detected on the next sync, controlled by `SYNC_INTERVAL`; this is polling, not a live Google Drive notification. Initial downloads are also queued, though the existing startup sync finishes before the slideshow opens. The queue lasts for the current `run` process. A separate `digitalframe sync` process does not send priority notifications to a cache-only `slideshow` process; those files join its ordinary rotation on the next cache scan.
+New arrivals are detected on the next sync, controlled by `SYNC_INTERVAL`; this is polling, not a live Google Drive notification. Initial sync starts in a worker alongside cached playback, so the slideshow can open before authorization or downloads finish. Initial downloads are queued as they complete. The queue lasts for the current `run` process. A separate `digitalframe sync` process does not send priority notifications to a cache-only `slideshow` process; those files join its ordinary rotation on the next cache scan.
 
 ### Photo folders and synchronization
 
@@ -163,29 +161,41 @@ Configured Drive folder          Local cache
 
 Every startup selects **All**, playing photos from every album. Loose photos in either root and photos more than one folder deep are ignored. Existing flat-cache photos stay on disk but no longer play; move the photos into Drive albums and run sync to populate the new cache layout. Empty Drive albums also get local directories and appear in the selector.
 
-Every sync fetches all listing pages for the parent and its immediate albums. A saved `.photos.json` manifest records Drive file IDs, relative cache paths, and content checksums (falling back to modification time and size). A SHA-256 hash of this metadata skips reconciliation when the tree is unchanged and its cached files exist. The remote metadata still needs to be listed on each interval; the hash avoids repeated downloads and cache changes. See Google's [file metadata](https://developers.google.com/workspace/drive/api/reference/rest/v3/files) and [paginated listings](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list).
+Every sync fetches all listing pages for the parent and its immediate albums, using one Google Drive connection for that pass. Only supported photo extensions are downloaded. After a complete listing, it hashes the actual cached bytes and compares them to current Drive MD5 checksums. Unchanged bytes need no download. Zero-byte files, wrong photos under existing names, and other mismatches are automatically replaced from Drive. If Drive omits a checksum, the file is downloaded again rather than trusting a previous manifest. Available remote file sizes are also checked before publication. See Google's [file metadata](https://developers.google.com/workspace/drive/api/reference/rest/v3/files) and [paginated listings](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list).
 
-New or edited photos download through temporary files and become visible only when complete. Renames and moves reuse unchanged cached content. Deleted photos and removed albums are cleaned up after a complete successful listing; listing failures preserve the cache, and failed downloads retry on the next sync. An older copy of an edited photo is retained until the update succeeds where its path is still available. Only manifest-tracked photos and empty old album directories are removed. Duplicate names within a folder get distinct suffixes; path separators and unsafe names are normalized to keep files within the cache. Same filenames in different albums remain independent.
+The `.photos.json` manifest records the last successful remote catalog and its SHA-256 metadata hash. It is not used as proof that a local file is correct. A missing, corrupt, or outdated manifest is rebuilt from Drive; recovery never restores image backups. Renames and moves can reuse existing bytes only after their checksum matches current Drive metadata. Temporary hard links avoid copying full images while filenames are swapped, and abandoned staging directories are cleaned up on a later sync.
 
-New-photo priority respects the selected album. Photos from other albums join the normal rotation when you select that album or All. If the selected album disappears or is renamed during sync, selection falls back to All. An existing but empty selected album shows the waiting screen.
+Downloads stay in temporary files until their checksums and sizes pass validation. Listing failures leave cached photos intact. Failed downloads retain existing files and defer deletion cleanup until a fully successful pass. A successful sync removes supported photos inside immediate cache subfolders when they are absent from Drive, then removes empty obsolete album directories. This also reconciles stale photos when the old manifest is missing. Keep personal originals outside the cache. Duplicate names within a folder get distinct suffixes, unsafe path components are normalized, and long photo names preserve their supported extension.
+
+A `.sync.lock` file prevents another process from syncing the same cache concurrently; leave the lock file in place. `digitalframe sync` returns a nonzero exit code for lock, configuration, listing, or download failures. Shutdown signals the sync worker to stop between file/chunk operations and joins it for up to five seconds. Network operations have a timeout; an operation still in progress can finish in its daemon thread or be interrupted when the process exits. The next successful sync rechecks the actual bytes against Drive.
+
+New-photo priority respects the selected album. Photos from other albums join the normal rotation when you select that album or All. If the selected album disappears or is renamed during sync, selection falls back to All. An existing but empty selected album shows the waiting screen. Album listings refresh at most once per second, and after completed sync passes.
+
+While a photo is visible, a single worker prepares the next image, including the first photo of the next cycle. Pillow decoding and resizing happen on that worker; all Pygame drawing stays on the display thread. Only one upcoming image is prepared at a time, with its retained RGB pixels sized for the display. Folder changes and newly queued photos are checked at photo boundaries. A conflicting decode is allowed to finish before its result is discarded. If sync replaces a file while it is loading, the new version is prepared again. Timer sleeps stop at the remaining photo interval.
+
+Unreadable photos are skipped and reported on the control page. The same unchanged failed file is retried after 60 seconds, or sooner when sync replaces it. If no photo is readable, playback waits instead of repeatedly decoding files without a delay. Sync can repair local corruption from Drive; if the original on Drive is itself unreadable, the error remains until the source is corrected.
 
 ### Control the frame from another device
 
 Assume the frame and your phone, tablet, or computer are already connected to the same Wi-Fi, with device-to-device traffic allowed. When `run` or `slideshow` starts, the frame detects its network address and logs the browser URL, for example **`http://192.168.1.42:8000`**. Open the displayed URL on the other device. `CONTROL_HOST` defaults to `0.0.0.0` (listen on network interfaces), and `CONTROL_PORT` defaults to `8000`; the browser uses the actual frame IP, not `0.0.0.0` or the other device's `localhost`.
 
-The URL also appears at the **top-left of the slideshow for 30 seconds**, including on the waiting screen when no photos are cached. Set `CONTROL_URL_DISPLAY_SECONDS` in `.env` to change this duration; it accepts nonnegative whole seconds, with `0` disabling the overlay. The countdown begins when the slideshow opens, after any initial sync. The overlay disappears during a long photo interval without advancing or reloading the photo. This startup setting is separate from the photo duration controlled by the form.
+The URL also appears at the **top-left of the slideshow for 30 seconds**, including on the waiting screen when no photos are cached. Set `CONTROL_URL_DISPLAY_SECONDS` in `.env` to change this duration; it accepts nonnegative whole seconds, with `0` disabling the overlay. The countdown begins when the control URL becomes available to the slideshow. The overlay disappears during a long photo interval without advancing or reloading the photo. This startup setting is separate from the photo duration controlled by the form.
 
-Address detection uses the operating system's route-selected local address, with a fallback to active Linux interfaces when no route is available. It does not hard-code a board model or interface name, send a probe datagram, or require internet access. An explicit `CONTROL_HOST` uses that listener's address. If detection fails, the server continues with a warning and no URL overlay; check the board's network settings or router device list. Detection runs at startup, so restart the application after an address change. On machines with several networks or a VPN, the selected route may belong to another network; bind `CONTROL_HOST` to the desired local address if needed.
+Address detection uses the operating system's route-selected local address, with a fallback to active Linux interfaces when no route is available. It does not hard-code a board model or interface name, send a probe datagram, or require internet access. An explicit `CONTROL_HOST` uses that listener's address. If detection fails, the server continues with a warning and no URL overlay; check the board's network settings or router device list. A background supervisor rechecks the address every 15 seconds and announces a changed URL on the slideshow. On machines with several networks or a VPN, the selected route may belong to another network; bind `CONTROL_HOST` to the desired local address if needed.
 
-Enter positive whole seconds and click **Apply**. The page uses a normal HTML form, without JavaScript, CSS, or internet assets. The server accepts integer text such as `5`, validates it, and redirects back to the page with the updated duration. Letters, blanks, decimal notation such as `5.0`, fractions, zero, and negative values show an error directly below the form. Invalid submissions preserve the active setting and keep the slideshow running; correct the input and submit again.
+Enter positive whole seconds and click **Apply**. The page uses a normal HTML form, without JavaScript or internet assets; error history uses a simple red text style. The server accepts integer text such as `5`, validates it, and redirects back to the page with the updated duration. Letters, blanks, decimal notation such as `5.0`, fractions, zero, and negative values show an error directly below the form. Invalid submissions preserve the active setting and keep the slideshow running; correct the input and submit again.
 
 Use the **Photo folder** dropdown and **Apply folder** to choose an album or **All**. This is a second plain HTML form. Refresh the page after a sync to see added, renamed, or removed albums.
 
 Each accepted duration Apply action shows **“Seconds per photo: …” for 15 seconds** in the same top-left banner. **Apply folder** shows **“Photo folder: …”** for the same duration, including when All is selected or the same folder is submitted again. If sync removes the selected folder, the automatic fallback also shows **“Photo folder: All”**. It replaces any visible startup URL; the latest accepted duration or folder submission replaces the message and restarts the 15-second timer. Invalid submissions do not trigger a message. Setting confirmations still appear when the startup URL overlay is disabled.
 
-Changes apply starting with the next successfully displayed photo. The current photo finishes its original interval. Settings live in memory: restarting restores `DISPLAY_SECONDS` from configuration and selects All folders. Refreshing the page displays the current setting. The panel starts before initial cloud sync and also works in cache-only mode without internet access. The `sync` command does not start it.
+Changes apply starting with the next successfully displayed photo. The current photo finishes its original interval. Settings live in memory: restarting restores `DISPLAY_SECONDS` from configuration and selects All folders. Refreshing the page displays the current setting. The panel and initial cloud sync start independently of playback. The panel also works in cache-only mode without internet access. The `sync` command does not start it.
 
-The panel is intended for a trusted local network and has no login. No Wi-Fi setup or public hosting is included. Escape, window close, or Ctrl+C stops the panel with the display. An unavailable port produces a startup error; unexpected server exit stops the display with an error. Run one application process; a separate Uvicorn process or multiple workers would not share these runtime settings. Google authorization continues to use its separate port 8080.
+The panel is intended for a trusted local network and has no login. No Wi-Fi setup or public hosting is included. Escape, window close, or Ctrl+C stops the panel with the display. An unavailable port or unexpected server exit is logged while cached playback continues. The supervisor retries the same configured address and port every 15 seconds; it does not automatically choose a different port. Run one application process; a separate Uvicorn process or multiple workers would not share these runtime settings. Google authorization continues to use its separate port 8080.
+
+Network/SSL connection failures and a missing network address show **“Network connection problem. Retrying...” in red at the top-left of the slideshow**. The warning stays across photo changes until the affected connection checks recover, even when the startup URL overlay is disabled. It takes priority over temporary URL and settings messages; settings still apply normally. Cached playback and background retries continue. These network errors are omitted from the control page, including after recovery, and remain in the console logs.
+
+Other sync, image, and control-server errors appear **in red below the controls**, with UTC timestamps and active/recovered labels. Refresh the page to see updates. The bounded history resets when the app restarts. A disconnected Wi-Fi link or failed listener can make the page unreachable until connectivity/listening recovers. TLS verification remains enabled.
 
 ### Maintenance and deployment
 
@@ -199,9 +209,9 @@ After installing development tooling and Pygame, run from the repository root:
 uv run --no-sync python -m pytest -q
 ```
 
-The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real image rendering (including HEIC and EXIF rotation), slideshow waiting/cycling/exit, CLI commands, background sync startup, integer form validation and error recovery, updates between photos, control server lifecycle, automatic address selection, and timed URL overlay rendering/restoration. It uses temporary cache/token files, mocked cloud services, and SDL's dummy video/audio drivers. No `.env`, Google account, network access, or physical display is needed.
+The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real image rendering (including HEIC and EXIF rotation), slideshow waiting/cycling/exit, CLI commands, nonblocking background sync startup, integer form validation and error recovery, updates between photos, control server lifecycle, automatic address selection, and timed URL overlay rendering/restoration. It uses temporary cache/token files, mocked cloud services, and SDL's dummy video/audio drivers. No `.env`, Google account, network access, or physical display is needed.
 
-Album tests cover paginated Drive listings, ignored loose/nested photos, duplicate names, empty folders, renames, moves, updates, deletions, failed-sync recovery, and folder changes between photos while new downloads are queued. Live Google OAuth/connectivity and visible output on the target board remain manual checks; these tests do not verify the hardware graphics stack.
+Album tests cover paginated Drive listings, ignored loose/nested photos, duplicate names, empty folders, renames, moves, updates, deletions, failed-sync recovery, and folder changes between photos while new downloads are queued. Additional tests cover actual preload threads and cycle boundaries, corrupted/wrong cache bytes, interrupted sync recovery, process locking, SSL failures, server restarts, and escaped red error history. Live Google OAuth/connectivity and visible output on the target board remain manual checks; these tests do not verify the hardware graphics stack.
 
 ### Updating and transferring the installation
 

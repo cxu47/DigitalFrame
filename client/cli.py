@@ -50,11 +50,18 @@ def slideshow() -> None:
 @app.command()
 def sync() -> None:
     """Synchronize photos once without opening a display."""
-    from .logging_config import configure_logging
-    from .sync import sync_photos
+    try:
+        from .logging_config import configure_logging
+        from .sync import sync_photos
 
-    configure_logging()
-    sync_photos()
+        configure_logging()
+        result = sync_photos()
+    except Exception as exc:
+        typer.echo(f"Sync failed: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    if not result.success:
+        typer.echo(f"Sync failed: {result.error or 'Synchronization was cancelled.'}", err=True)
+        raise typer.Exit(code=1)
 
 
 def main(argv: list[str] | None = None) -> None:

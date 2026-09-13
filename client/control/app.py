@@ -1,6 +1,7 @@
 """HTML form routes; construction has no display or cloud side effects."""
 
 from typing import Annotated
+import logging
 
 from fastapi import FastAPI, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,12 +12,18 @@ from ..settings import INTEGER_ERROR, RuntimeSettings, parse_display_seconds
 from .page import render_page
 
 
-def create_app(settings: RuntimeSettings) -> FastAPI:
+logger = logging.getLogger(__name__)
+
+
+def create_app(settings: RuntimeSettings, status=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     def page(current, **kwargs):
         folders, selected = settings.folder_snapshot()
-        return render_page(current, folders=folders, selected_folder=selected, **kwargs)
+        if status is not None:
+            status.clear("Control requests")
+        return render_page(current, folders=folders, selected_folder=selected,
+                           issues=status.panel_snapshot() if status is not None else (), **kwargs)
 
     @app.get("/")
     async def index():
@@ -65,5 +72,16 @@ def create_app(settings: RuntimeSettings) -> FastAPI:
         if exc.status_code == 404:
             message = "Page not found. Use the forms below to control the slideshow."
         return page(settings.display_seconds, error=message, status_code=exc.status_code)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request, exc):
+        logger.error("Control request failed; cached playback continues",
+                     exc_info=(type(exc), exc, exc.__traceback__))
+        if status is not None:
+            status.report_exception("Control requests", exc)
+        # Avoid the folder provider here: its failure may have caused this error.
+        return render_page(settings.display_seconds,
+                           error="The control page encountered an error. Cached playback continues; try refreshing.",
+                           issues=status.panel_snapshot() if status is not None else (), status_code=500)
 
     return app

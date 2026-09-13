@@ -25,11 +25,14 @@ def test_authentication_reuses_refreshes_or_creates_token(app, monkeypatch, stat
     monkeypatch.setattr(drive, "build", build)
 
     assert drive.get_drive_service() is build.return_value
-    build.assert_called_once_with("drive", "v3", credentials=creds)
+    build.assert_called_once()
+    transport = build.call_args.kwargs["http"]
+    assert transport.credentials is creds
+    assert transport.http.timeout == drive.NETWORK_TIMEOUT
     if state == "first_run":
         load.assert_not_called()
         authorize.assert_called_once_with(drive.GOOGLE_CREDENTIALS_FILE, drive.GOOGLE_SCOPES)
-        flow.run_local_server.assert_called_once_with(port=8080, open_browser=False)
+        flow.run_local_server.assert_called_once_with(port=8080, open_browser=False, timeout_seconds=60)
     else:
         load.assert_called_once_with(token, drive.GOOGLE_SCOPES)
         authorize.assert_not_called()
@@ -39,28 +42,6 @@ def test_authentication_reuses_refreshes_or_creates_token(app, monkeypatch, stat
         creds.refresh.assert_not_called()
     expected = "saved-test-token" if state == "saved" else "new-test-token"
     assert token.read_text() == f'{{"token": "{expected}"}}'
-
-
-def test_listing_selects_images_from_the_requested_folder(app, monkeypatch):
-    service = Mock()
-    photos = [
-        {"id": "jpeg", "name": "family.jpg", "mimeType": "image/jpeg"},
-        {"id": "heic", "name": "phone.heic", "mimeType": "image/heic"},
-    ]
-    service.files.return_value.list.return_value.execute.return_value = {
-        "files": photos + [
-            {"id": "folder", "name": "album", "mimeType": "application/vnd.google-apps.folder"},
-            {"id": "video", "name": "clip.mp4", "mimeType": "video/mp4"},
-        ]
-    }
-    monkeypatch.setattr(app.drive, "get_drive_service", lambda: service)
-
-    assert app.drive.list_photos("album-id") == photos
-    query = service.files.return_value.list.call_args.kwargs["q"]
-    assert "'album-id' in parents" in query
-    assert "trashed = false" in query
-    service.files.return_value.list.return_value.execute.return_value = {}
-    assert app.drive.list_photos("empty-album") == []
 
 
 def test_download_writes_all_chunks(app, tmp_path, monkeypatch):
@@ -89,7 +70,7 @@ def test_album_listing_paginates_root_and_children_and_ignores_loose_and_nested_
     photo = lambda file_id: {"id": file_id, "name": file_id + ".jpg", "mimeType": "image/jpeg"}
     service.files.return_value.list.return_value.execute.side_effect = [
         {"files": [photo("loose"), folder("kids")], "nextPageToken": "root-next"},
-        {"files": [photo("one"), folder("nested")], "nextPageToken": "kids-next"},
+        {"files": [photo("one"), folder("nested"), {"id": "svg", "name": "logo.svg", "mimeType": "image/svg+xml"}], "nextPageToken": "kids-next"},
         {"files": [photo("two")]},
         {"files": [folder("empty")]},
         {"files": []},

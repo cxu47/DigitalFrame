@@ -1,5 +1,9 @@
+"""Read and validate only the configuration needed by the requested command."""
+
+import math
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 from .settings import parse_display_seconds
 
@@ -8,63 +12,60 @@ load_dotenv(CLIENT_DIR.parent / ".env")
 
 
 def required_env(name):
-    value = os.getenv(name)
-    if value is None:
+    value = os.getenv(name, "").strip()
+    if not value:
         raise ValueError(f"Missing required configuration: {name}. See .env.example.")
     return value
 
 
-def seconds_from_env(name):
-    value = required_env(name)
+def seconds_from_env(name, default=None):
     try:
-        return float(value)
-    except ValueError:
-        raise ValueError(f"{name} must be a number of seconds.") from None
+        value = float(os.getenv(name, default) if default is not None else required_env(name))
+        if not math.isfinite(value) or value < 0.001:
+            raise ValueError
+        return value
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a finite number of at least 0.001 seconds.") from None
 
 
-# Relative paths are resolved from client/; absolute paths remain absolute.
-CACHE_DIR = CLIENT_DIR / required_env("CACHE_FOLDER")
-
-# Slideshow
-try:
-    DISPLAY_SECONDS = parse_display_seconds(required_env("DISPLAY_SECONDS"))
-except ValueError as exc:
-    raise ValueError(f"DISPLAY_SECONDS: {exc}") from None
-IDLE_SECONDS = seconds_from_env("IDLE_SECONDS")
-
-# The browser on another device uses the frame's Wi-Fi IP, not this bind address.
-CONTROL_HOST = os.getenv("CONTROL_HOST", "0.0.0.0").strip()
-if not CONTROL_HOST:
-    raise ValueError("CONTROL_HOST must not be empty.")
-try:
-    CONTROL_PORT = parse_display_seconds(os.getenv("CONTROL_PORT", "8000"))
-    if CONTROL_PORT > 65535:
-        raise ValueError
-except ValueError:
-    raise ValueError("CONTROL_PORT must be an integer from 1 to 65535.") from None
-
-# Show the access URL once when the slideshow opens; zero disables the banner.
-try:
-    _url_seconds = os.getenv("CONTROL_URL_DISPLAY_SECONDS", "30").strip()
-    if not _url_seconds.isascii() or not _url_seconds.isdigit():
-        raise ValueError
-    CONTROL_URL_DISPLAY_SECONDS = int(_url_seconds)
-except ValueError:
-    raise ValueError("CONTROL_URL_DISPLAY_SECONDS must be a nonnegative integer.") from None
-
-# Sync
-SYNC_INTERVAL = seconds_from_env("SYNC_INTERVAL")
-
-# Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-# Google credentials and token filenames are relative to SECRETS_FOLDER.
-GOOGLE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-# Only Drive sync needs this value; a cache-only slideshow can run without it.
-GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
-GOOGLE_CREDENTIALS_FILE = (
-    CLIENT_DIR / required_env("SECRETS_FOLDER") / required_env("GOOGLE_CREDENTIALS_FILE")
-)
-GOOGLE_TOKEN_FILE = (
-    CLIENT_DIR / required_env("SECRETS_FOLDER") / required_env("GOOGLE_TOKEN_FILE")
-)
+def __getattr__(name):
+    # Module attributes remain convenient for each workflow, without requiring
+    # Google credentials to open a cache-only display or display settings to sync.
+    if name == "CACHE_DIR":
+        return CLIENT_DIR / required_env("CACHE_FOLDER")
+    if name == "DISPLAY_SECONDS":
+        try:
+            return parse_display_seconds(required_env(name))
+        except ValueError:
+            raise ValueError("DISPLAY_SECONDS must be a positive integer.") from None
+    if name in {"IDLE_SECONDS", "SYNC_INTERVAL"}:
+        return seconds_from_env(name)
+    if name == "NETWORK_TIMEOUT":
+        return seconds_from_env(name, "10")
+    if name == "CONTROL_HOST":
+        value = os.getenv(name, "0.0.0.0").strip()
+        if not value:
+            raise ValueError("CONTROL_HOST must not be empty.")
+        return value
+    if name == "CONTROL_PORT":
+        try:
+            value = parse_display_seconds(os.getenv(name, "8000"))
+            if value > 65535:
+                raise ValueError
+            return value
+        except ValueError:
+            raise ValueError("CONTROL_PORT must be an integer from 1 to 65535.") from None
+    if name == "CONTROL_URL_DISPLAY_SECONDS":
+        value = os.getenv(name, "30").strip()
+        if not value.isascii() or not value.isdigit():
+            raise ValueError(f"{name} must be a nonnegative integer.")
+        return int(value)
+    if name == "LOG_LEVEL":
+        return os.getenv(name, "INFO")
+    if name == "GOOGLE_SCOPES":
+        return ["https://www.googleapis.com/auth/drive.readonly"]
+    if name == "GOOGLE_DRIVE_FOLDER_ID":
+        return required_env(name)
+    if name in {"GOOGLE_CREDENTIALS_FILE", "GOOGLE_TOKEN_FILE"}:
+        return CLIENT_DIR / required_env("SECRETS_FOLDER") / required_env(name)
+    raise AttributeError(name)

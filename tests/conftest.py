@@ -2,6 +2,7 @@
 
 import socket
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -52,6 +53,7 @@ def app(tmp_path, monkeypatch, isolated_environment):
     for module in (modules.config, modules.drive):
         monkeypatch.setattr(module, "GOOGLE_TOKEN_FILE", secrets / "token.json")
         monkeypatch.setattr(module, "GOOGLE_CREDENTIALS_FILE", secrets / "credentials.json")
+    monkeypatch.setattr(sync, "get_drive_service", Mock(return_value=Mock()))
     return modules
 
 
@@ -62,3 +64,27 @@ def screen(app):
     surface = pygame.display.set_mode((80, 60))
     yield surface
     pygame.quit()
+
+
+@pytest.fixture
+def immediate_loader(app, monkeypatch):
+    """Keep clock-driven UI tests deterministic; worker overlap is tested separately."""
+    from concurrent.futures import Future
+    from client.preload import PreparedPhoto, file_signature
+    class ImmediateLoader:
+        def __init__(self, prepare):
+            self.prepare = prepare
+        def submit(self, path, size):
+            future = Future()
+            try:
+                if path.stat().st_size == 0:
+                    prepared = PreparedPhoto(b'\0\0\0', (1, 1), file_signature(path))
+                else:
+                    prepared = self.prepare(path, size)
+                future.set_result(prepared)
+            except Exception as exc:
+                future.set_exception(exc)
+            return future
+        def close(self):
+            return True
+    monkeypatch.setattr(app.slideshow, 'PhotoLoader', ImmediateLoader)

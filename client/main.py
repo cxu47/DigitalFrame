@@ -1,48 +1,52 @@
+"""Run cached playback immediately while one worker synchronizes Drive."""
+
 import logging
 import threading
-import time
-from functools import partial
-from queue import SimpleQueue
 
-from .sync import sync_photos
 from .runtime import run_display
-from .config import SYNC_INTERVAL
 from .logging_config import configure_logging
-
 
 logger = logging.getLogger(__name__)
 
 
-def sync_loop(new_photos=None):
-    logger.debug(
-        "Background sync loop started with a %s-second interval",
-        SYNC_INTERVAL,
-    )
+class SyncWorker:
+    def __init__(self, new_photos, status, index, interval):
+        self.new_photos, self.status, self.index = new_photos, status, index
+        self.interval = interval
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._run, name="photo-sync", daemon=True)
 
-    while True:
-        time.sleep(SYNC_INTERVAL)
-        sync_photos(new_photos=new_photos)
+    def start(self):
+        self.thread.start()
 
+    def _run(self):
+        while not self.stop_event.is_set():
+            try:
+                # Missing cloud configuration or SSL/network errors must not
+                # prevent a frame with cached photos from running.
+                from .sync import sync_photos
+                sync_photos(self.new_photos, stop_event=self.stop_event, status=self.status)
+                self.index.refresh(force=True)
+            except Exception as exc:
+                logger.exception("Background sync failed; cached playback continues")
+                self.status.report_exception("Sync", exc)
+            if self.stop_event.wait(self.interval):
+                break
 
-def start_sync(new_photos=None):
-    sync_photos(new_photos=new_photos)
-
-    sync_thread = threading.Thread(
-        target=sync_loop,
-        args=(new_photos,),
-        daemon=True,
-        name="photo-sync",
-    )
-    sync_thread.start()
-    logger.debug("Background sync thread started")
+    def stop(self):
+        self.stop_event.set()
+        self.thread.join(timeout=5)
+        if self.thread.is_alive():
+            logger.warning("Sync is still finishing a bounded network operation during shutdown")
 
 
 def main():
+    from .config import SYNC_INTERVAL
+
     configure_logging()
     logger.info("DigitalFrame client starting")
-    new_photos = SimpleQueue()
     try:
-        run_display(before_display=partial(start_sync, new_photos), new_photos=new_photos)
+        run_display(sync_interval=SYNC_INTERVAL)
     finally:
         logger.info("DigitalFrame client stopped")
 

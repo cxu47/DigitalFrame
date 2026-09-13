@@ -4,6 +4,8 @@ from itertools import count
 from queue import SimpleQueue
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("immediate_loader")
 from PIL import Image
 
 
@@ -84,7 +86,7 @@ def test_slideshow_uses_current_display_resolution_fullscreen(app, monkeypatch):
 
     monkeypatch.setattr(slideshow, "get_cached_photos", lambda: [])
     monkeypatch.setattr(slideshow, "display_message", message)
-    monkeypatch.setattr(slideshow, "handle_events", lambda: False)
+    monkeypatch.setattr(slideshow, "handle_events", lambda: not observed)
     slideshow.show_slideshow()
 
     assert observed == [(desktop_size, True)]
@@ -130,8 +132,8 @@ def test_slideshow_waits_for_new_photos_cycles_and_exits_cleanly(app, monkeypatc
     render = slideshow.display_photo
     render_message = slideshow.display_message
 
-    def display(screen, path):
-        success = render(screen, path)
+    def display(screen, path, prepared=None):
+        success = render(screen, path, prepared)
         if success:
             displayed.append(path.name)
             if len(displayed) == 3:
@@ -165,7 +167,7 @@ def test_slideshow_waits_for_new_photos_cycles_and_exits_cleanly(app, monkeypatc
 
     assert len(messages) == 1
     assert displayed == ["a.png", "b.png", "a.png"]
-    assert waits and all(delay == 10 for delay in waits)
+    assert waits and all(0 < delay <= 10 for delay in waits)
 
 
 @pytest.mark.parametrize("initial,updated", [(5, 10), (5, 1)])
@@ -188,7 +190,7 @@ def test_form_update_applies_to_next_photo_and_invalid_input_keeps_current_inter
     monkeypatch.setattr(slideshow, "get_cached_photos", lambda: photos)
     monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: clock[0])
 
-    def display(screen, path):
+    def display(screen, path, prepared=None):
         displayed.append((path.name, clock[0]))
         return True
 
@@ -225,7 +227,7 @@ def test_update_while_cache_empty_applies_to_first_photo(app, monkeypatch):
     monkeypatch.setattr(slideshow, "get_cached_photos", lambda: photos)
     monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: clock[0])
     monkeypatch.setattr(slideshow, "handle_events", lambda: len(shown) < 2)
-    monkeypatch.setattr(slideshow, "display_photo", lambda screen, path: shown.append(clock[0]) or True)
+    monkeypatch.setattr(slideshow, "display_photo", lambda screen, path, prepared=None: shown.append(clock[0]) or True)
 
     with TestClient(create_app(settings)) as browser:
         def wait(milliseconds):
@@ -262,13 +264,14 @@ def test_sync_arrivals_play_next_then_resume_without_interrupting_current_photo(
     for name in ("a.png", "b.png", "c.png"):
         with Image.new("RGB", (20, 10), "red") as source:
             source.save(album / name)
-    monkeypatch.setattr(app.sync, "list_albums", lambda folder: [{"id": "kids", "name": "kids", "photos": [
+    monkeypatch.setattr(app.sync, "list_albums", lambda folder, **kwargs: [{"id": "kids", "name": "kids", "photos": [
+        *[{"id": p.stem, "name": p.name, "md5Checksum": __import__("hashlib").md5(p.read_bytes()).hexdigest()} for p in album.glob("[abc].png")],
         {"id": "z", "name": "z.png"},
         {"id": "broken", "name": "broken.png"},
         {"id": "aa", "name": "aa.png"},
     ]}])
 
-    def download(file_id, path):
+    def download(file_id, path, **kwargs):
         if file_id == "broken":
             path.write_bytes(b"not an image")
         else:
@@ -279,8 +282,8 @@ def test_sync_arrivals_play_next_then_resume_without_interrupting_current_photo(
     displayed = []
     render = slideshow.display_photo
 
-    def display(screen, path):
-        success = render(screen, path)
+    def display(screen, path, prepared=None):
+        success = render(screen, path, prepared)
         if success:
             displayed.append((path.name, clock[0]))
             if len(displayed) == 5:
@@ -308,28 +311,6 @@ def test_sync_arrivals_play_next_then_resume_without_interrupting_current_photo(
     }
 
 
-def test_priority_photos_are_not_repeated_in_the_same_cycle(app):
-    a, b, c = [app.cache / name for name in ("a.jpg", "b.jpg", "c.jpg")]
-    new_photos = SimpleQueue()
-    new_photos.put(c)
-    new_photos.put(c)
-    new_photos.put(app.cache / "unsupported.gif")
-    order = app.slideshow.prioritize_new_photos([a, b, c], new_photos)
-    assert next(order) == c
-    assert next(order) == a
-    new_photos.put(a)  # A notification arriving just after normal playback.
-    assert list(order) == [b]
-
-
-def test_arrival_after_last_regular_photo_does_not_wait_for_another_cycle(app):
-    a, z = [app.cache / name for name in ("a.jpg", "z.jpg")]
-    new_photos = SimpleQueue()
-    order = app.slideshow.prioritize_new_photos([a], new_photos)
-    assert next(order) == a
-    new_photos.put(z)
-    assert list(order) == [z]
-
-
 @pytest.mark.parametrize('selection', ['kids', 'empty'])
 def test_folder_change_applies_at_next_photo_and_filters_queued_arrivals(app, monkeypatch, selection):
     from fastapi.testclient import TestClient
@@ -349,7 +330,7 @@ def test_folder_change_applies_at_next_photo_and_filters_queued_arrivals(app, mo
     shown = []
     waiting = []
     monkeypatch.setattr(slideshow.pygame.time, 'get_ticks', lambda: clock[0])
-    monkeypatch.setattr(slideshow, 'display_photo', lambda screen, path: shown.append((path.parent.name, path.name, clock[0])) or True)
+    monkeypatch.setattr(slideshow, 'display_photo', lambda screen, path, prepared=None: shown.append((path.parent.name, path.name, clock[0])) or True)
     monkeypatch.setattr(slideshow, 'display_message', lambda screen, text: waiting.append(clock[0]))
     monkeypatch.setattr(slideshow, 'handle_events', lambda: clock[0] < 2200)
     with TestClient(create_app(settings)) as browser:
@@ -374,3 +355,29 @@ def test_folder_change_applies_at_next_photo_and_filters_queued_arrivals(app, mo
     else:
         assert len(shown) == 1
         assert waiting[0] == 1000
+
+
+def test_multiple_arrivals_keep_fifo_priority_and_skip_duplicates(app, monkeypatch):
+    from client.settings import RuntimeSettings
+    slideshow = app.slideshow
+    directory = app.cache / 'kids'
+    directory.mkdir(parents=True)
+    for name in ['a.jpg', 'b.jpg', 'c.jpg']:
+        (directory / name).touch()
+    queue = SimpleQueue()
+    shown = []
+    clock = [0]
+    def wait(milliseconds):
+        clock[0] += milliseconds
+        if clock[0] == 10:
+            for name in ['z.jpg', 'z.jpg', 'a.jpg', 'aa.jpg']:
+                path = directory / name
+                path.touch()
+                queue.put(path)
+        assert clock[0] < 6000
+    monkeypatch.setattr(slideshow.pygame.time, 'get_ticks', lambda: clock[0])
+    monkeypatch.setattr(slideshow.pygame.time, 'wait', wait)
+    monkeypatch.setattr(slideshow, 'display_photo', lambda screen, path, prepared=None: shown.append(path.name) or True)
+    monkeypatch.setattr(slideshow, 'handle_events', lambda: len(shown) < 5)
+    slideshow.show_slideshow(RuntimeSettings(1), new_photos=queue)
+    assert shown == ['a.jpg', 'z.jpg', 'aa.jpg', 'b.jpg', 'c.jpg']

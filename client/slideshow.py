@@ -1,4 +1,5 @@
 import logging
+import time
 from collections import deque
 from queue import Empty
 
@@ -6,13 +7,14 @@ import pygame
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from .settings import RuntimeSettings
 from .overlay import SlideshowOverlay
+from .cache import SUPPORTED_PHOTO_SUFFIXES, cached_folders, cached_photos
+from .preload import PhotoChanged, PhotoLoader, PreparedPhoto, file_signature
 from PIL import ExifTags, Image, ImageOps
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
 
 logger = logging.getLogger(__name__)
-SUPPORTED_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 def handle_events():
     for event in pygame.event.get():
@@ -38,245 +40,255 @@ def display_message(screen, message):
     pygame.display.flip()
 
 def get_cached_folders():
-    if not CACHE_DIR.exists():
-        return []
-    return sorted(path.name for path in CACHE_DIR.iterdir()
-                  if not path.name.startswith(".") and not path.is_symlink() and path.is_dir())
+    return cached_folders(CACHE_DIR)
 
 
 def get_cached_photos():
-    return sorted(
-        path
-        for folder in get_cached_folders()
-        for path in (CACHE_DIR / folder).glob("*")
-        if not path.is_symlink() and path.is_file() and path.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES
-    )
+    return cached_photos(CACHE_DIR)
 
-def prioritize_new_photos(photos, new_photos, accepts=lambda photo: True):
-    """Check for completed downloads between photos, retaining the cycle's place."""
-    remaining = deque(photos)
-    shown = set()
-    while True:
-        if new_photos is not None:
+def prepare_photo(photo_path, screen_size):
+    """Decode/resize on a worker; return only display-sized RGB pixels."""
+    signature = file_signature(photo_path)
+    with Image.open(photo_path) as img:
+        screen_width, screen_height = screen_size
+        orientation = img.getexif().get(ExifTags.Base.Orientation, 1)
+        swaps_dimensions = orientation in {5, 6, 7, 8}
+        image_width, image_height = img.size
+        if swaps_dimensions:
+            image_width, image_height = image_height, image_width
+        scale = min(screen_width / image_width, screen_height / image_height)
+        new_size = (max(1, int(image_width * scale)), max(1, int(image_height * scale)))
+        img.draft("RGB", (new_size[1], new_size[0]) if swaps_dimensions else new_size)
+        ImageOps.exif_transpose(img, in_place=True)
+        resized = img
+        if scale < 1:
+            img.thumbnail(new_size, Image.Resampling.LANCZOS)
+        elif img.size != new_size:
+            resized = img.resize(new_size, Image.Resampling.LANCZOS)
+        try:
+            rgb = resized if resized.mode == "RGB" else resized.convert("RGB")
             try:
-                photo = new_photos.get_nowait()
-            except Empty:
-                pass
-            else:
-                if (photo.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES
-                        and photo not in shown and accepts(photo)):
-                    shown.add(photo)
-                    yield photo
-                continue
-        if not remaining:
-            return
-        photo = remaining.popleft()
-        if photo not in shown and accepts(photo):
-            shown.add(photo)
-            yield photo
-
-def display_photo(screen, photo_path):
-    image = None
-    pixel_buffer = None
-
-    try:
-        with Image.open(photo_path) as img:
-            screen_width, screen_height = screen.get_size()
-
-            orientation = img.getexif().get(ExifTags.Base.Orientation, 1)
-            swaps_dimensions = orientation in {5, 6, 7, 8}
-            image_width, image_height = img.size
-            if swaps_dimensions:
-                image_width, image_height = image_height, image_width
-
-            scale = min(
-                screen_width / image_width,
-                screen_height / image_height,
-            )
-
-            new_size = (
-                max(1, int(image_width * scale)),
-                max(1, int(image_height * scale)),
-            )
-
-            # JPEG decoders can use this hint to avoid decoding more pixels
-            # than the display needs. Other formats safely ignore it.
-            draft_size = (
-                (new_size[1], new_size[0])
-                if swaps_dimensions
-                else new_size
-            )
-            img.draft("RGB", draft_size)
-            ImageOps.exif_transpose(img, in_place=True)
-
-            # Resize before creating the Pygame surface so only the small,
-            # display-sized pixel buffer is copied into Pygame.
-            resized_image = img
-            if scale < 1:
-                img.thumbnail(new_size, Image.Resampling.LANCZOS)
-            elif img.size != new_size:
-                resized_image = img.resize(
-                    new_size,
-                    Image.Resampling.LANCZOS,
-                )
-
-            try:
-                display_image = (
-                    resized_image
-                    if resized_image.mode == "RGB"
-                    else resized_image.convert("RGB")
-                )
-                try:
-                    pixel_buffer = display_image.tobytes()
-                    image = pygame.image.frombytes(
-                        pixel_buffer,
-                        display_image.size,
-                        "RGB",
-                    )
-                finally:
-                    if display_image is not resized_image:
-                        display_image.close()
+                prepared = PreparedPhoto(rgb.tobytes(), rgb.size, signature)
             finally:
-                if resized_image is not img:
-                    resized_image.close()
+                if rgb is not resized:
+                    rgb.close()
+        finally:
+            if resized is not img:
+                resized.close()
+    if signature != file_signature(photo_path):
+        raise PhotoChanged("Photo changed while it was loading")
+    return prepared
 
-        # frombytes has copied the pixels, so the temporary byte buffer can be
-        # released before the photo remains on screen for DISPLAY_SECONDS.
-        pixel_buffer = None
 
-    except (pygame.error, FileNotFoundError, OSError) as exc:
-        logger.warning(
-            "Skipping unavailable image %s: %s",
-            photo_path.name,
-            exc,
-        )
+def display_photo(screen, photo_path, prepared=None):
+    try:
+        if prepared is None:
+            prepared = prepare_photo(photo_path, screen.get_size())
+        if prepared.signature != file_signature(photo_path):
+            return False
+        # All Pygame calls stay on the display thread. frombuffer avoids another
+        # RGB copy; the prepared bytes stay alive until blitting has finished.
+        image = pygame.image.frombuffer(prepared.pixels, prepared.size, "RGB")
+        screen_width, screen_height = screen.get_size()
+        x = (screen_width - prepared.size[0]) // 2
+        y = (screen_height - prepared.size[1]) // 2
+        screen.fill("black")
+        screen.blit(image, (x, y))
+        pygame.display.flip()
+        logger.debug("Displayed photo: %s", photo_path.name)
+        return True
+    except Exception as exc:
+        logger.warning("Skipping unavailable image %s: %s", photo_path.name, exc)
         return False
 
-    image_width, image_height = image.get_size()
-    x = (screen_width - image_width) // 2
-    y = (screen_height - image_height) // 2
-
-    screen.fill("black")
-    screen.blit(image, (x, y))
-    pygame.display.flip()
-    logger.debug("Displayed photo: %s", photo_path.name)
-
-    # The display surface owns its copied pixels after blit/flip; keeping this
-    # source surface alive would retain the previous photo's buffer.
-    image = None
-    return True
-
-def show_slideshow(settings=None, *, check_running=lambda: None,
-                   control_url=None, url_display_seconds=30, new_photos=None):
+def show_slideshow(settings=None, *,
+                   control_url=None, url_display_seconds=30, new_photos=None,
+                   status=None, index=None):
     if settings is None:
         settings = RuntimeSettings(DISPLAY_SECONDS, folders=get_cached_folders)
     pygame.init()
-
     logger.info("Slideshow started")
+    loader = None
     running = True
-    waiting_for_photos = False
-
+    bad_photos = {}
+    ahead = None
     try:
-        # Use the selected display's current resolution. A fixed 4:3 mode can
-        # be stretched by the display to widescreen even when photos are fitted
-        # proportionally within the Pygame surface.
         screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-        logger.info(
-            "Display initialized: backend=%s, surface=%s, window=%s",
-            pygame.display.get_driver(),
-            screen.get_size(),
-            pygame.display.get_window_size(),
-        )
+        logger.info("Display initialized: backend=%s, surface=%s, window=%s",
+                    pygame.display.get_driver(), screen.get_size(), pygame.display.get_window_size())
         pygame.display.set_caption("Digital Frame")
         screen.fill("black")
         pygame.display.flip()
-        overlay = SlideshowOverlay(screen, control_url, url_display_seconds)
+        current_url = control_url() if callable(control_url) else control_url
+        overlay = SlideshowOverlay(screen, current_url, url_display_seconds)
         overlay.new_frame()
         observed_revision = 0
+        loader = PhotoLoader(prepare_photo)
 
-        def refresh_overlay():
-            nonlocal observed_revision
+        def check():
+            nonlocal running, observed_revision, current_url
+            if callable(control_url):
+                url = control_url()
+                if url and url != current_url:
+                    current_url = url
+                    overlay.show_message(f"Control: {url}", url_display_seconds)
+            if status is not None:
+                overlay.set_network_problem(status.network_problem())
             message, revision = settings.notification_snapshot()
             if revision != observed_revision:
                 overlay.show_message(message, 15)
                 observed_revision = revision
             overlay.update()
+            running = handle_events()
+            return running
 
-        while running:
-            check_running()
-            refresh_overlay()
-            selected_folder = settings.selected_folder
-            photos = get_cached_photos()
-            if selected_folder is not None:
-                photos = [photo for photo in photos if photo.parent.name == selected_folder]
-            if not photos:
-                if not waiting_for_photos:
-                    logger.info("No cached photos available; waiting")
-                    waiting_for_photos = True
+        def pause(milliseconds):
+            overlay.wait(max(1, min(int(IDLE_SECONDS * 1000), milliseconds)))
 
-                display_message(
-                    screen,
-                    "No cached photos available."
-                )
-                overlay.new_frame()
+        def eligible(path, folder):
+            try:
+                valid = (path.parent.parent == CACHE_DIR and path.is_file()
+                         and not path.is_symlink() and not path.parent.is_symlink()
+                         and (folder is None or path.parent.name == folder))
+                failed = bad_photos.get(path)
+                if failed and (failed[0] != file_signature(path) or time.monotonic() >= failed[1]):
+                    bad_photos.pop(path, None)
+                    failed = None
+                return valid and not failed
+            except OSError:
+                return False
 
-                running = handle_events()
+        def finished(future):
+            while not future.done():
+                if not check():
+                    return False
+                pause(50)
+            return running
 
-                overlay.wait(int(IDLE_SECONDS * 1000))
-                continue
+        while running and check():
+            selected = settings.selected_folder
+            photos = index.photos() if index is not None else get_cached_photos()
+            bad_photos = {path: value for path, value in bad_photos.items() if path in photos}
+            remaining = deque(path for path in photos if eligible(path, selected))
+            seen = set()
+            priority_paths = set()
+            successes = 0
+            failures = 0
 
-            if waiting_for_photos:
-                logger.info(
-                    "Cached photos available; resuming slideshow"
-                )
-                waiting_for_photos = False
+            def queued():
+                if new_photos is None:
+                    return None
+                while True:
+                    try:
+                        path = new_photos.get_nowait()
+                    except Empty:
+                        return None
+                    if path.suffix.lower() in SUPPORTED_PHOTO_SUFFIXES and path not in seen and eligible(path, selected):
+                        seen.add(path)
+                        priority_paths.add(path)
+                        return path
 
-            def accepts(photo):
-                return (photo.parent.parent == CACHE_DIR and photo.is_file()
-                        and (selected_folder is None or photo.parent.name == selected_folder))
+            def next_photo():
+                path = queued()
+                if path is not None:
+                    return path
+                while remaining:
+                    path = remaining.popleft()
+                    if path not in seen and eligible(path, selected):
+                        seen.add(path)
+                        return path
+                return None
 
-            rotation = prioritize_new_photos(photos, new_photos, accepts=accepts)
-            while True:
-                check_running()
-                refresh_overlay()
-                if settings.selected_folder != selected_folder:
+            path = next_photo()
+            future = None
+            if ahead is not None:
+                if not finished(ahead[1]):
                     break
-                try:
-                    photo_path = next(rotation)
-                except StopIteration:
+                if ahead[0] == path:
+                    future = ahead[1]
+                ahead = None
+            if path is not None and future is None:
+                future = loader.submit(path, screen.get_size())
+            while path is not None and running:
+                if not finished(future):
                     break
-                if not handle_events():
-                    running = False
+                # Selection and newly completed downloads are reconsidered only
+                # at photo boundaries. Let an in-flight decode finish lazily.
+                if settings.selected_folder != selected:
                     break
-                success = display_photo(screen, photo_path)
-                if not success:
+                urgent = queued() if path not in priority_paths else None
+                if urgent is not None:
+                    remaining.appendleft(path)
+                    seen.discard(path)
+                    path = urgent
+                    future = loader.submit(path, screen.get_size())
                     continue
-
-                start_time = pygame.time.get_ticks()
-                duration_ms = settings.display_seconds * 1000
+                prepared = None
+                try:
+                    prepared = future.result()
+                    future = None  # Do not retain its RGB buffer during the interval.
+                    if not eligible(path, selected) or prepared.signature != file_signature(path):
+                        seen.discard(path)
+                        remaining.appendleft(path)
+                        success = False
+                    else:
+                        success = display_photo(screen, path, prepared)
+                        if not success:
+                            raise OSError("Image could not be rendered")
+                except PhotoChanged:
+                    seen.discard(path)
+                    remaining.appendleft(path)
+                    success = False
+                except Exception as exc:
+                    failures += 1
+                    try:
+                        bad_photos[path] = (file_signature(path), time.monotonic() + 60)
+                    except OSError:
+                        pass
+                    logger.warning("Cannot display %s: %s", path.name, exc)
+                    if status is not None:
+                        status.report("Photos", f"Cannot display {path.name}: {exc}. Drive sync will check the cached file.")
+                    success = False
+                finally:
+                    prepared = None
+                    future = None
+                deadline = pygame.time.get_ticks() + settings.display_seconds * 1000
+                if success:
+                    successes += 1
+                    overlay.new_frame()
+                path = next_photo()
+                future = loader.submit(path, screen.get_size()) if path is not None else None
+                if success:
+                    if path is None:
+                        upcoming = index.photos() if index is not None else get_cached_photos()
+                        wrap = next((item for item in upcoming if eligible(item, selected)), None)
+                        if wrap is not None:
+                            ahead = (wrap, loader.submit(wrap, screen.get_size()))
+                    # Only a single upcoming image is decoded during this wait.
+                    while running and pygame.time.get_ticks() < deadline:
+                        if not check():
+                            break
+                        pause(max(1, deadline - pygame.time.get_ticks()))
+            if not running:
+                break
+            if path is not None and future is not None:
+                ahead = (path, future)
+            if settings.selected_folder != selected:
+                continue
+            if successes == 0:
+                display_message(screen, "No readable photos available. Waiting for photos.")
                 overlay.new_frame()
-
-                while (
-                    pygame.time.get_ticks() - start_time
-                    < duration_ms
-                ):
-                    check_running()
-                    refresh_overlay()
-                    running = handle_events()
-
-                    if not running:
-                        break
-
-                    overlay.wait(int(IDLE_SECONDS * 1000))
-
-                if not running:
-                    break
-
+                if check():
+                    pause(max(1000, int(IDLE_SECONDS * 1000)))
+            elif failures == 0 and not bad_photos and status is not None:
+                status.clear("Photos")
     finally:
+        if loader is not None and not loader.close():
+            logger.warning("Image loader is still completing its last decode")
         pygame.quit()
         logger.info("Slideshow stopped")
 
+
 if __name__ == "__main__":
     from .runtime import main
-
     main()

@@ -47,14 +47,14 @@ def test_concurrent_updates_and_new_runtime_reset():
 
 def test_snapshot_records_each_accepted_submission_only():
     settings = RuntimeSettings(5)
-    assert settings.snapshot() == (5, 0)
+    assert settings.notification_snapshot() == ("Seconds per photo: 5", 0)
     settings.set_display_seconds(10)
-    assert settings.snapshot() == (10, 1)
+    assert settings.notification_snapshot() == ("Seconds per photo: 10", 1)
     settings.set_display_seconds(10)
-    assert settings.snapshot() == (10, 2)
+    assert settings.notification_snapshot() == ("Seconds per photo: 10", 2)
     with pytest.raises(ValueError):
         settings.set_display_seconds(1.5)
-    assert settings.snapshot() == (10, 2)
+    assert settings.notification_snapshot() == ("Seconds per photo: 10", 2)
 
 
 @pytest.mark.parametrize("name,value,valid", [
@@ -82,9 +82,20 @@ def test_configuration_in_fresh_interpreter(name, value, valid):
     result = subprocess.run(
         [sys.executable, "-c", "from client import config; assert isinstance(config.DISPLAY_SECONDS, int); "
          "assert isinstance(config.IDLE_SECONDS, float); assert isinstance(config.SYNC_INTERVAL, float); "
-         "assert isinstance(config.CONTROL_URL_DISPLAY_SECONDS, int)"],
+         "assert isinstance(config.CONTROL_URL_DISPLAY_SECONDS, int); "
+         "assert isinstance(config.CONTROL_PORT, int); assert config.CONTROL_HOST; "
+         "assert isinstance(config.SYNC_INTERVAL, float)"],
         env=env, capture_output=True, text=True, timeout=10,
     )
     assert (result.returncode == 0) is valid, result.stderr
     if not valid:
         assert name in result.stderr
+
+
+@pytest.mark.parametrize('name', ['IDLE_SECONDS', 'SYNC_INTERVAL', 'NETWORK_TIMEOUT'])
+@pytest.mark.parametrize('value', ['-1', '0', 'nan', 'inf', '-inf', '0.0001'])
+def test_invalid_intervals_fail_validation(monkeypatch, name, value):
+    from client import config
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        getattr(config, name)
