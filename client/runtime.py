@@ -16,7 +16,7 @@ def run_display(*, sync_interval=None):
     status = RuntimeStatus()
     index = CacheIndex(CACHE_DIR)
     settings = RuntimeSettings(DISPLAY_SECONDS, folders=index.folders)
-    panel = ControlSupervisor(create_app(settings, status), CONTROL_HOST, CONTROL_PORT, status)
+    panel = ControlSupervisor(create_app(settings, status, index=index), CONTROL_HOST, CONTROL_PORT, status)
     new_photos = SimpleQueue()
     worker = None
     panel.start()

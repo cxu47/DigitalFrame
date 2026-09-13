@@ -92,6 +92,7 @@ def test_runtime_starts_workers_without_waiting_for_sync_and_always_stops_them(a
             self.browser = TestClient(web_app)
         def start(self):
             calls.append('panel')
+            assert 'All — 0 pictures — updated unknown' in self.browser.get('/').text
             self.browser.post('/settings', data={'display_seconds': '10'})
         def stop(self):
             calls.append('panel stop')

@@ -1,6 +1,7 @@
 """Recover actual cache bytes from current Drive metadata, regardless of manifest state."""
 
 import hashlib
+import json
 from pathlib import Path
 from queue import SimpleQueue
 from threading import Event
@@ -29,6 +30,31 @@ def setup_sync(app, monkeypatch, remote):
 
 def cached(app):
     return {str(path.relative_to(app.cache)): path.read_bytes() for path in app.slideshow.get_cached_photos()}
+
+
+def test_upload_dates_order_downloads_and_survive_offline_without_redownloading(app, monkeypatch):
+    from client.cache import CacheIndex
+    old = {**photo("old"), "createdTime": "2024-01-01T00:00:00Z", "modifiedTime": "2026-09-13T00:00:00Z"}
+    new = {**photo("new"), "createdTime": "2026-09-12T00:00:00Z"}
+    middle = {**photo("middle"), "createdTime": "2025-01-01T00:00:00Z"}
+    remote = [album("kids", [old, middle]), {**album("summer", [new]), "modifiedTime": "2026-09-12T00:00:00Z"}]
+    listing, download = setup_sync(app, monkeypatch, remote)
+    queue = SimpleQueue()
+    assert app.sync.sync_photos(queue).success
+    assert [call.args[0] for call in download.call_args_list] == ["new", "middle", "old"]
+    assert [queue.get_nowait().stem for _ in range(3)] == ["new", "middle", "old"]
+    manifest = json.loads((app.cache / app.sync.MANIFEST).read_text())
+    assert manifest["photos"]["old"]["created"] == old["createdTime"]
+    assert manifest["folder_metadata"]["summer"]["modified"] == remote[1]["modifiedTime"]
+    old["modifiedTime"] = "2026-09-14T00:00:00Z"
+    assert app.sync.sync_photos().success
+    assert download.call_count == 3
+    listing.side_effect = ConnectionError("Offline")
+    assert not app.sync.sync_photos().success
+    # A new process can still order and label photos from the saved metadata.
+    index = CacheIndex(app.cache)
+    assert [p.stem for p in index.photos()] == ["new", "middle", "old"]
+    assert index.folder_details()["kids"].updated.date().isoformat() == "2026-09-14"
 
 
 def test_sync_mirrors_albums_empty_folders_and_reuses_one_service(app, monkeypatch):

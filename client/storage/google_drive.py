@@ -63,7 +63,7 @@ def _list_children(service, folder_id, stop_event=None):
         check_cancelled(stop_event)
         result = service.files().list(
             q=f"'{folder_id}' in parents and trashed = false",
-            fields="nextPageToken,incompleteSearch,files(id,name,mimeType,modifiedTime,md5Checksum,size)",
+            fields="nextPageToken,incompleteSearch,files(id,name,mimeType,createdTime,modifiedTime,md5Checksum,size)",
             pageSize=1000,
             pageToken=token,
         ).execute()
@@ -84,6 +84,7 @@ def list_albums(drive_folder_id, *, service=None, stop_event=None):
             continue
         albums.append({
             "id": folder["id"], "name": folder["name"],
+            **{field: folder[field] for field in ("createdTime", "modifiedTime") if field in folder},
             "photos": [file for file in _list_children(service, folder["id"], stop_event)
                        if file["mimeType"].startswith("image/") and supported_photo(file["name"])],
         })

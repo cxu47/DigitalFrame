@@ -14,12 +14,11 @@ from tempfile import TemporaryDirectory
 from .config import CACHE_DIR, GOOGLE_DRIVE_FOLDER_ID
 from .logging_config import configure_logging
 from .storage.google_drive import get_drive_service, list_albums, download_photo
-from .cache import cached_folders, cached_photos, supported_photo
+from .cache import MANIFEST, cached_folders, cached_photos, newest_first, supported_photo
 from .cancellation import Cancelled, check_cancelled
 from .status import is_network_error
 
 logger = logging.getLogger(__name__)
-MANIFEST = ".photos.json"
 
 
 @dataclass
@@ -82,8 +81,12 @@ def _catalog(albums):
                 "md5": photo.get("md5Checksum"),
                 "size": int(photo["size"]) if "size" in photo else None,
                 "modified": photo.get("modifiedTime"),
+                "created": photo.get("createdTime"),
             }
-    return {"folders": folders, "photos": photos}
+    folder_metadata = {folders[album["id"]]: {
+        "created": album.get("createdTime"), "modified": album.get("modifiedTime")
+    } for album in albums}
+    return {"folders": folders, "folder_metadata": folder_metadata, "photos": photos}
 
 
 def _cache_path(relative):
@@ -168,7 +171,10 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 reusable[digest] = target
         for folder in catalog["folders"].values():
             _cache_path(f"{folder}/placeholder").parent.mkdir(exist_ok=True)
-        for file_id, entry in catalog["photos"].items():
+        # Across all albums, publish newer uploads first so the arrival queue
+        # follows the same default order while the first sync is still running.
+        for file_id, entry in sorted(catalog["photos"].items(),
+                                     key=lambda item: newest_first(item[1].get("created"))):
             check_cancelled(stop_event)
             destination = _cache_path(entry["path"])
             expected = entry["md5"]
@@ -216,7 +222,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                     (CACHE_DIR / folder).rmdir()
                 except OSError:
                     pass  # Unrelated non-photo files are not removed.
-        manifest = {"schema": 2, **catalog,
+        manifest = {"schema": 3, **catalog,
                     "hash": hashlib.sha256(json.dumps(catalog, sort_keys=True).encode()).hexdigest()}
         encoded = json.dumps(manifest, sort_keys=True)
         try:

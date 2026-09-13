@@ -15,7 +15,7 @@ from .page import render_page
 logger = logging.getLogger(__name__)
 
 
-def create_app(settings: RuntimeSettings, status=None) -> FastAPI:
+def create_app(settings: RuntimeSettings, status=None, *, index=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     def page(current, **kwargs):
@@ -23,10 +23,11 @@ def create_app(settings: RuntimeSettings, status=None) -> FastAPI:
         if status is not None:
             status.clear("Control requests")
         return render_page(current, folders=folders, selected_folder=selected,
+                           folder_details=index.folder_details() if index is not None else {},
                            issues=status.panel_snapshot() if status is not None else (), **kwargs)
 
     @app.get("/")
-    async def index():
+    async def index_page():
         return page(settings.display_seconds)
 
     @app.post("/folder")

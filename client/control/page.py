@@ -7,9 +7,18 @@ from string import Template
 from fastapi.responses import HTMLResponse
 
 
+def _folder_label(name, details):
+    if details is None:
+        return name
+    date = details.updated.date().isoformat() if details.updated is not None else "unknown"
+    noun = "picture" if details.count == 1 else "pictures"
+    return f"{name} — {details.count} {noun} — updated {date}"
+
+
 def render_page(current: int, *, submitted: str | None = None,
                 error: str = "", status_code: int = 200,
-                folders=(), selected_folder=None, issues=()) -> HTMLResponse:
+                folders=(), selected_folder=None, issues=(), folder_details=None) -> HTMLResponse:
+    folder_details = folder_details or {}
     template = Template(
         files("client.control").joinpath("templates/index.html").read_text(encoding="utf-8")
     )
@@ -27,7 +36,7 @@ def render_page(current: int, *, submitted: str | None = None,
             folder_options="".join(
                 f'<option value="{escape(value, quote=True)}"'
                 f'{" selected" if value == (selected_folder or "") else ""}>'
-                f'{escape(label)}</option>'
+                f'{escape(_folder_label(label, folder_details.get(value or None)))}</option>'
                 for value, label in [("", "All"), *((folder, folder) for folder in folders)]
             ),
         ),

@@ -66,8 +66,9 @@ def test_download_writes_all_chunks(app, tmp_path, monkeypatch):
 
 def test_album_listing_paginates_root_and_children_and_ignores_loose_and_nested_photos(app, monkeypatch):
     service = Mock()
-    folder = lambda file_id: {"id": file_id, "name": file_id, "mimeType": "application/vnd.google-apps.folder"}
-    photo = lambda file_id: {"id": file_id, "name": file_id + ".jpg", "mimeType": "image/jpeg"}
+    dates = {"createdTime": "2025-01-01T00:00:00Z", "modifiedTime": "2026-09-12T00:00:00Z"}
+    folder = lambda file_id: {"id": file_id, "name": file_id, "mimeType": "application/vnd.google-apps.folder", **dates}
+    photo = lambda file_id: {"id": file_id, "name": file_id + ".jpg", "mimeType": "image/jpeg", **dates}
     service.files.return_value.list.return_value.execute.side_effect = [
         {"files": [photo("loose"), folder("kids")], "nextPageToken": "root-next"},
         {"files": [photo("one"), folder("nested"), {"id": "svg", "name": "logo.svg", "mimeType": "image/svg+xml"}], "nextPageToken": "kids-next"},
@@ -77,12 +78,13 @@ def test_album_listing_paginates_root_and_children_and_ignores_loose_and_nested_
     ]
     monkeypatch.setattr(app.drive, "get_drive_service", lambda: service)
     assert app.drive.list_albums("root") == [
-        {"id": "kids", "name": "kids", "photos": [photo("one"), photo("two")]},
-        {"id": "empty", "name": "empty", "photos": []},
+        {"id": "kids", "name": "kids", "photos": [photo("one"), photo("two")], **dates},
+        {"id": "empty", "name": "empty", "photos": [], **dates},
     ]
     calls = service.files.return_value.list.call_args_list
     assert [call.kwargs["pageToken"] for call in calls] == [None, None, "kids-next", "root-next", None]
     assert all("md5Checksum" in call.kwargs["fields"] for call in calls)
+    assert all("createdTime" in call.kwargs["fields"] and "modifiedTime" in call.kwargs["fields"] for call in calls)
 
 
 def test_incomplete_drive_search_cannot_be_used_to_delete_cached_photos(app, monkeypatch):
