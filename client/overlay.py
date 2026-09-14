@@ -11,6 +11,7 @@ class SlideshowOverlay:
         self.screen = screen
         self.background = None
         self._network_problem = False
+        self._network_text = None
         self._notice = None
         self._set_message(f"Control: {url}" if url else None, seconds)
 
@@ -22,7 +23,7 @@ class SlideshowOverlay:
         self.label = None
         self.deadline = None
         if self._network_problem:
-            text = "Network connection problem. Retrying..."
+            text = self._network_text or "Network connection problem. Retrying..."
             color = "red"
         elif self._notice is not None and time.monotonic() < self._notice[1]:
             text, self.deadline = self._notice
@@ -30,8 +31,29 @@ class SlideshowOverlay:
         else:
             return
         font = pygame.font.Font(None, 28)
-        self.label = font.render(text, True, color)
         available = max(1, self.screen.get_width() - 24)
+        if "\n" in text:
+            # Keep setup credentials legible by wrapping individual lines instead
+            # of shrinking the entire banner into one long line.
+            for size in (28, 24, 20, 16, 12):
+                font = pygame.font.Font(None, size)
+                lines = []
+                for paragraph in text.splitlines():
+                    line = ""
+                    for character in paragraph:
+                        if line and font.size(line + character)[0] > available:
+                            lines.append(line)
+                            line = ""
+                        line += character
+                    lines.append(line)
+                if len(lines) * font.get_linesize() <= max(1, self.screen.get_height() - 24):
+                    break
+            self.label = pygame.Surface((available, max(1, len(lines) * font.get_linesize())))
+            self.label.fill("black")
+            for number, line in enumerate(lines):
+                self.label.blit(font.render(line, True, color), (0, number * font.get_linesize()))
+        else:
+            self.label = font.render(text, True, color)
         if self.label.get_width() > available:
             scale = available / self.label.get_width()
             self.label = pygame.transform.smoothscale(
@@ -56,6 +78,16 @@ class SlideshowOverlay:
             return
         self._restore_background()
         self._network_problem = active
+        self._network_text = None
+        self._render_active()
+        self.new_frame()
+
+    def set_network_message(self, text):
+        if text == self._network_text and bool(text) == self._network_problem:
+            return
+        self._restore_background()
+        self._network_problem = bool(text)
+        self._network_text = text
         self._render_active()
         self.new_frame()
 

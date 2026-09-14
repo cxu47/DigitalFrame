@@ -38,7 +38,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["client", "client.storage", "client.control"]
+packages = ["client", "client.storage", "client.control", "client.network"]
 include-package-data = false
 
 [tool.setuptools.package-data]

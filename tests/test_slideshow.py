@@ -1,6 +1,7 @@
 """Render real images through Pillow and Pygame's headless display."""
 
 from itertools import count
+from pathlib import Path
 from queue import SimpleQueue
 
 import pytest
@@ -17,8 +18,12 @@ from PIL import Image
 ])
 def test_photo_formats_fit_and_center_with_black_borders(app, screen, tmp_path, suffix, mode, size):
     photo = tmp_path / f"photo.{suffix}"
-    with Image.new(mode, size, "red") as source:
-        source.save(photo)
+    if suffix == "heic":
+        # Some board libheif builds decode HEIC but intentionally omit encoders.
+        photo.write_bytes((Path(__file__).parent / "fixtures/wide-red.heic").read_bytes())
+    else:
+        with Image.new(mode, size, "red") as source:
+            source.save(photo)
 
     assert app.slideshow.display_photo(screen, photo) is True
     for point in ((0, 20), (79, 39), (40, 30)):

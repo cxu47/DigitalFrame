@@ -53,6 +53,7 @@ class ControlServer:
             raise
         # Read the actual listener, including an OS-selected port when port=0.
         listener = self.server.servers[0].sockets[0].getsockname()
+        self.port = listener[1]
         self.url = control_url(listener[0], listener[1])
         if self.url:
             logger.info("Control panel: %s", self.url)
@@ -75,13 +76,28 @@ class ControlServer:
 class ControlSupervisor:
     """Retry a failed listener off the display thread and retain its error history."""
 
-    def __init__(self, app, host, port, status, retry_seconds=15):
+    def __init__(self, app, host, port, status, retry_seconds=15, *, network=None):
         self.app, self.host, self.port = app, host, port
         self.status = status
         self.retry_seconds = retry_seconds
+        self.network = network
+        self.bound_port = None
         self.url = None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="control-supervisor", daemon=True)
+
+    @property
+    def url(self):
+        if self.network is not None:
+            snapshot = self.network.snapshot()
+            if self.bound_port is not None and snapshot.state in {"online", "ap"} and snapshot.address:
+                return f"http://{snapshot.address}:{self.bound_port}"
+            return None
+        return self._url
+
+    @url.setter
+    def url(self, value):
+        self._url = value
 
     def start(self):
         self._thread.start()
@@ -94,17 +110,21 @@ class ControlSupervisor:
                     if panel is None:
                         panel = ControlServer(self.app, self.host, self.port)
                         panel.start()
+                        self.bound_port = panel.port
+                        if self.network is not None:
+                            self.network.control_port = panel.port
                     panel.check_running()
                     self.status.clear("Control server")
-                    detected = control_url(self.host, self.port)
+                    detected = self.url if self.network is not None else control_url(self.host, self.port)
                     if detected:
                         if detected != self.url:
                             logger.info("Control panel: %s", detected)
                         self.url = detected
                         self.status.clear("Network address")
-                    else:
+                    elif self.network is None:
                         self.status.report("Network address", "No network address is available. Cached playback continues.", network=True)
                 except Exception as exc:
+                    self.bound_port = None
                     logger.exception("Control server unavailable; cached playback continues")
                     self.status.report_exception("Control server", exc)
                     if panel is not None:

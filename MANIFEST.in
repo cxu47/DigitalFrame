@@ -4,5 +4,6 @@ prune tests
 prune logs
 prune assets
 prune .plans
+recursive-include deploy *.py *.service
 exclude .env
 global-exclude *.py[cod] .gitkeep

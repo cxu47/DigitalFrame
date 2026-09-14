@@ -193,11 +193,51 @@ Each accepted duration Apply action shows **“Seconds per photo: …” for 15 
 
 Changes apply starting with the next successfully displayed photo. The current photo finishes its original interval. Settings live in memory: restarting restores `DISPLAY_SECONDS` from configuration and selects All folders. Refreshing the page displays the current setting. The panel and initial cloud sync start independently of playback. The panel also works in cache-only mode without internet access. The `sync` command does not start it.
 
-The panel is intended for a trusted local network and has no login. No Wi-Fi setup or public hosting is included. Escape, window close, or Ctrl+C stops the panel with the display. An unavailable port or unexpected server exit is logged while cached playback continues. The supervisor retries the same configured address and port every 15 seconds; it does not automatically choose a different port. Run one application process; a separate Uvicorn process or multiple workers would not share these runtime settings. Google authorization continues to use its separate port 8080.
+The panel is intended for a trusted local network and has no login. Wi-Fi setup is available with the optional board helper described below. Escape, window close, or Ctrl+C stops the panel with the display. An unavailable port or unexpected server exit is logged while cached playback continues. The supervisor retries the same configured address and port every 15 seconds; it does not automatically choose a different port. Run one application process; a separate Uvicorn process or multiple workers would not share these runtime settings. Google authorization continues to use its separate port 8080.
 
-Network/SSL connection failures and a missing network address show **“Network connection problem. Retrying...” in red at the top-left of the slideshow**. The warning stays across photo changes until the affected connection checks recover, even when the startup URL overlay is disabled. It takes priority over temporary URL and settings messages; settings still apply normally. Cached playback and background retries continue. These network errors are omitted from the control page, including after recovery, and remain in the console logs.
+Without the board helper, network/SSL connection failures and a missing network address show **“Network connection problem. Retrying...” in red at the top-left of the slideshow**. The warning stays across photo changes until the affected connection checks recover, even when the startup URL overlay is disabled. It takes priority over temporary URL and settings messages; settings still apply normally. Cached playback and background retries continue. These network errors are omitted from the control page, including after recovery, and remain in the console logs.
 
 Other sync, image, and control-server errors appear **in red below the controls**, with UTC timestamps and active/recovered labels. Refresh the page to see updates. The bounded history resets when the app restarts. A disconnected Wi-Fi link or failed listener can make the page unreachable until connectivity/listening recovers. TLS verification remains enabled.
+
+### Offline hotspot and Wi-Fi setup
+
+The HTML panel has **Slideshow control**, **Wi-Fi control**, and **Notes** sections. With the board helper enabled, loss of internet starts a WPA2 setup hotspot. The slideshow displays the hotspot name, setup password, and current control URL in a red multiline banner **without a timeout**, including when `CONTROL_URL_DISPLAY_SECONDS=0`. It stays through every photo and failed connection attempt until internet connectivity is restored. The setup password is separate from the home-Wi-Fi password; home credentials are never displayed or logged.
+
+Join the displayed DigitalFrame network on your phone, stay connected despite its “No internet” warning, and open the displayed `http://…:8000` address. The same folder and duration forms control the running cached slideshow. Enter your home **Wi-Fi SSID** and **Wi-Fi password**, then select **Apply Wi-Fi**. This first version supports WPA2-Personal and compatible transition networks. Credentials are preserved exactly, validated on the server, and sent through a restricted local helper socket to NetworkManager. No captive portal, JavaScript polling, or internet assets are needed.
+
+The single radio temporarily leaves hotspot mode during one bounded connection attempt. On failure, it restores the same hotspot credentials and waits for another submission. On success, reconnect your phone to home Wi-Fi and open the new URL shown on HDMI. The form remains visible while online, with read-only inputs and a disabled submit button. Refresh the page to see a changed state. A stale page cannot bypass the server-side restriction.
+
+**Offline means no periodic internet checks, Drive requests, or automatic home-Wi-Fi retries.** The waiting state survives app/helper/board restarts. The helper checks connectivity only while online (every 30 seconds, with short request deadlines) and after a user-submitted attempt. It also receives local device events. A separate cloud outage or authorization error does not cause a hotspot when independent internet checks succeed. Normal Drive sync resumes once after reconnection and then uses its usual interval. Local listener/helper supervision can still recover a crashed service; that is separate from internet reconnection.
+
+The helper chooses a private subnet avoiding known local routes and remembered upstream prefixes; it prefers `10.42.0.1/24` when available. That address is an example, not a guarantee. The displayed URL uses the actual AP/upstream interface and listener port. Phone-side routes cannot be exhaustively checked. AP forwarding is blocked while setup is active; the network provides local board access rather than a router service.
+
+Install only on a dedicated Linux board whose adapter and driver support WPA2 AP mode and whose Wi-Fi is owned by NetworkManager. The helper uses OS `python3-dbus`, `python3-gi`, `curl`, `dnsmasq`, and `iptables`; it does not modify the frame's custom Pygame environment. The app itself remains unprivileged. The installer copies only helper code to root-owned `/opt/digitalframe-network`, creates a restricted socket service, and disables NetworkManager's separate periodic connectivity checker. The helper records adopted profiles' original autoconnect flags before disabling automatic station retries; it does not delete those profiles.
+
+After updating the board checkout and verifying its existing runtime, set these values in its `.env`:
+
+```dotenv
+WIFI_SETUP_ENABLED=true
+CONTROL_HOST=0.0.0.0
+```
+
+For the investigated board, the explicit installation command is:
+
+```bash
+sudo /usr/bin/python3 deploy/install-network-helper.py \
+  --user chang --interface wlan0 --mac ac:6a:a3:29:b9:61 \
+  --project /home/chang/DigitalFrame --start
+```
+
+Replace these identifiers with the target board's verified values. `--project` installs an ordinary-user slideshow service on tty1, alongside the helper, so setup instructions and the panel can return after reboot. It replaces the tty1 login prompt while running; use SSH or another console for administration. Preserve the board's existing SDL device configuration. Omitting `--start` stages installation; omitting `--project` installs only the helper for a manually managed frame process. Keep the display/panel operational before conducting a live outage test. A single-radio hotspot switch disconnects Wi-Fi SSH, so keep local console access during installation.
+
+Service status and logs:
+
+```bash
+systemctl status digitalframe digitalframe-network
+journalctl -u digitalframe -u digitalframe-network
+```
+
+To disable the managed setup, run `sudo /usr/bin/python3 deploy/remove-network-helper.py`, then set `WIFI_SETUP_ENABLED=false`. It disables both installed services, restores recorded autoconnect flags and the normal connectivity-check configuration, and removes only its own forwarding rule. Helper files and state are retained for inspection. To manually recover SSH from a local board console, stop `digitalframe-network` and explicitly activate the saved home connection with `sudo nmcli connection up <profile-name>`; the helper must be stopped first because its waiting-for-user state is intentional.
 
 ### Maintenance and deployment
 
@@ -221,4 +261,4 @@ For an intentional package update, edit the relevant version constraint, run `uv
 
 To transfer the frame, check out the same repository revision on the new machine, install its OS prerequisites and uv, select a compatible interpreter and any required declared Pygame source, supply local configuration and credentials, and synchronize the lockfile. Validate actual visible output on that machine. A startup service can eventually invoke the absolute path to `.venv/bin/digitalframe run` as the frame user, once its graphical/TTY session access is configured; startup should not resolve or install dependencies.
 
-Docker is no longer the active deployment path. For this single-user frame, native execution keeps display and host-network access straightforward; the earlier Docker configuration remains in Git history. The local control server shares the slideshow process and runtime settings. It assumes Wi-Fi is already connected and does not manage network configuration. Automatic startup after reboot remains future work.
+Docker is no longer the active deployment path. For this single-user frame, native execution keeps display and host-network access straightforward; the earlier Docker configuration remains in Git history. The local control server shares the slideshow process and runtime settings. Optional board networking and systemd startup are described in the hotspot installation section; ordinary development runs leave network management disabled.

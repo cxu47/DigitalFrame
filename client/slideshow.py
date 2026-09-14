@@ -103,7 +103,7 @@ def display_photo(screen, photo_path, prepared=None):
 
 def show_slideshow(settings=None, *,
                    control_url=None, url_display_seconds=30, new_photos=None,
-                   status=None, index=None):
+                   status=None, index=None, network=None):
     if settings is None:
         settings = RuntimeSettings(DISPLAY_SECONDS, folders=get_cached_folders)
     pygame.init()
@@ -132,7 +132,9 @@ def show_slideshow(settings=None, *,
                 if url and url != current_url:
                     current_url = url
                     overlay.show_message(f"Control: {url}", url_display_seconds)
-            if status is not None:
+            if network is not None:
+                overlay.set_network_message(network.snapshot().banner(current_url if (not callable(control_url)) else control_url(), network.control_port))
+            elif status is not None:
                 overlay.set_network_problem(status.network_problem())
             message, revision = settings.notification_snapshot()
             if revision != observed_revision:

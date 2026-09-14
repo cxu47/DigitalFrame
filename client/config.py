@@ -31,6 +31,13 @@ def seconds_from_env(name, default=None):
 def __getattr__(name):
     # Module attributes remain convenient for each workflow, without requiring
     # Google credentials to open a cache-only display or display settings to sync.
+    if name == "WIFI_SETUP_ENABLED":
+        value = os.getenv(name, "false").strip().lower()
+        if value not in {"true", "false", "1", "0"}:
+            raise ValueError("WIFI_SETUP_ENABLED must be true or false.")
+        return value in {"true", "1"}
+    if name == "WIFI_SOCKET":
+        return os.getenv(name, "/run/digitalframe-network/control.sock")
     if name == "CACHE_DIR":
         return CLIENT_DIR / required_env("CACHE_FOLDER")
     if name == "DISPLAY_SECONDS":

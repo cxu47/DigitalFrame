@@ -7,6 +7,7 @@
 </head>
 <body>
   <h1>DigitalFrame control</h1>
+  <h2>Slideshow control</h2>
   <p>Current duration: $current seconds per photo.</p>
   <form method="post" action="/settings">
     <label for="seconds">Seconds per photo</label>
@@ -19,11 +20,26 @@
     <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
     <button type="submit">Apply folder</button>
   </form>
+  <h2>Wi-Fi control</h2>
+  <p>$wifi_status</p>
+  <form method="post" action="/wifi">
+    <input type="hidden" name="token" value="$wifi_token">
+    <p><label for="wifi-ssid">Wi-Fi SSID</label>
+      <input id="wifi-ssid" name="ssid" type="text" value="$wifi_ssid" autocomplete="off" aria-describedby="error"$wifi_readonly></p>
+    <p><label for="wifi-password">Wi-Fi password</label>
+      <input id="wifi-password" name="password" type="password" autocomplete="new-password" aria-describedby="error"$wifi_readonly></p>
+    <button type="submit"$wifi_disabled>Apply Wi-Fi</button>
+  </form>
+  <h2>Notes</h2>
   <p id="error" role="alert">$error</p>
   <section aria-label="Error history" aria-live="polite">$issues</section>
   <p>Changes apply from the next photo. Restarting restores the configured duration and All folders.</p>
   <p>Refresh this page after syncing to update folders, picture counts, and dates.</p>
   <p>Counts show cached pictures. Updated dates use the latest Drive date for the folder or its pictures (UTC).</p>
   <p>Photos play newest first by their creation date in Google Drive.</p>
+  <p>When offline, join the setup Wi-Fi shown on the slideshow and open its displayed address.
+     Stay connected if your phone warns that this network has no internet.</p>
+  <p>Wi-Fi setup makes one connection attempt per submission. If it fails, reconnect to the same setup network.
+     Cached playback continues. Refresh this page to see the latest status.</p>
 </body>
 </html>

@@ -1,0 +1,24 @@
+[Unit]
+Description=DigitalFrame slideshow and local control panel
+After=systemd-user-sessions.service
+Wants=digitalframe-network.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@PROJECT@
+ExecStart=@PROJECT@/.venv/bin/python -m client run
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+StandardOutput=journal
+StandardError=journal
+Environment=PYTHONUNBUFFERED=1
+Environment=SDL_VIDEODRIVER=kmsdrm
+
+[Install]
+WantedBy=multi-user.target

@@ -130,6 +130,7 @@ def test_server_restart_retains_error_history_and_does_not_touch_display(monkeyp
     attempts = []
     class Panel:
         def __init__(self, *args):
+            self.port = args[2]
             self._thread = Mock()
             self._thread.is_alive.return_value = False
         def start(self):

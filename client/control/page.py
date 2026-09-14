@@ -5,6 +5,7 @@ from importlib.resources import files
 from string import Template
 
 from fastapi.responses import HTMLResponse
+from ..network.state import DISABLED
 
 
 def _folder_label(name, details):
@@ -17,7 +18,8 @@ def _folder_label(name, details):
 
 def render_page(current: int, *, submitted: str | None = None,
                 error: str = "", status_code: int = 200,
-                folders=(), selected_folder=None, issues=(), folder_details=None) -> HTMLResponse:
+                folders=(), selected_folder=None, issues=(), folder_details=None,
+                wifi=DISABLED, wifi_token="") -> HTMLResponse:
     folder_details = folder_details or {}
     template = Template(
         files("client.control").joinpath("templates/index.html").read_text(encoding="utf-8")
@@ -27,6 +29,11 @@ def render_page(current: int, *, submitted: str | None = None,
             current=current,
             value=escape(str(current) if submitted is None else submitted, quote=True),
             error=escape(error),
+            wifi_status=escape(wifi.message),
+            wifi_ssid=escape(wifi.ssid, quote=True),
+            wifi_token=escape(wifi_token, quote=True),
+            wifi_disabled="" if wifi.can_submit else " disabled",
+            wifi_readonly="" if wifi.can_submit else " readonly",
             issues="".join(
                 '<p style="color: red">'
                 f'{escape(item["time"])} — {escape(item["source"])} '
