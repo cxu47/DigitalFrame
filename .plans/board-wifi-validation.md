@@ -18,11 +18,15 @@ Target: `chang@192.168.1.90`, Banana Pi M2 Zero. No login or home-Wi-Fi password
 - Helper connectivity verification returned the expected upstream interface/address.
 - Initial helper installation and startup succeeded; its protected status socket reported Online on `winter` at `192.168.1.90`.
 - Local automated suite passed all 256 tests after the final refinements. The offline lockfile check and source/wheel builds also passed.
-- Board suite: 253 passed, one existing HEIC test failed because it required an encoder. The application requires decoding; the replacement test fixture awaits board revalidation.
+- Final board suite: all 256 tests passed in the existing runtime. The HEIC test now uses a fixed fixture, so validation requires decoding rather than an unnecessary encoder.
+- Commit `8305178` was committed and pushed from WSL, then pulled with a fast-forward into the board checkout. Its source checkout remained clean.
+- Both services were installed and enabled for boot. HDMI initialized through KMSDRM at 1280×720, and the panel responded over the LAN with all three sections and disabled Wi-Fi submission while online. The user independently confirmed changing photos and the working panel on an iPhone.
+- Startup exposed an existing stuck `serial-getty@ttyGS0` initializer holding a console lock and blocking systemd. Terminating that initializer released the lock; the frame then started without application changes. Reboot behavior still needs validation on this OS image.
 - After an interruption to the development session, SSH was unreachable and the user confirmed that `DigitalFrame-8D14` was discoverable from an iPhone. This establishes live AP discovery, but does not yet establish phone authentication/DHCP/browser access.
+- The first test with the updated display/panel reached a discoverable hotspot, but the user reported that the displayed password was rejected. Authentication remains unverified; the requested replacement password is stored only on the board, never in this repository.
 
 ## Installation recovery and remaining checks
 
 The interruption occurred after the helper was running but before the updated slideshow/control panel was launched. The user ran the local terminal recovery command and confirmed the board returned to `192.168.1.90`. Complete the display/panel installation before further live outage tests, and use a bounded recovery timer for SSH testing. Subsequent deployment follows the user's requested WSL commit/push, then board pull workflow.
 
-Remaining: deploy final source, verify ordinary-user HDMI startup, confirm phone DHCP and browser access, change slideshow settings over the AP, test incorrect credentials restoring the same AP, submit working credentials, verify sync resumes and the Wi-Fi button disables, and confirm persistent overlay behavior. Update this record with actual outcomes rather than treating mocked tests as hardware proof.
+Remaining: confirm phone DHCP and browser access, change slideshow settings over the AP, test incorrect credentials restoring the same AP, submit working credentials, verify sync resumes and the Wi-Fi button disables, and confirm persistent overlay behavior. Update this record with actual outcomes rather than treating mocked tests as hardware proof.
