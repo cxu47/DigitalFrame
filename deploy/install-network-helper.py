@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the reviewed helper into root-owned paths on a dedicated NetworkManager board."""
+"""Stage the experimental helper without starting services or enabling boot startup."""
 
 import argparse
 import json
@@ -20,20 +20,12 @@ def main():
     parser.add_argument("--user", required=True)
     parser.add_argument("--interface", required=True)
     parser.add_argument("--mac", required=True)
-    parser.add_argument("--start", action="store_true", help="Enable and start the installed helper")
-    parser.add_argument("--project", help="Also install the ordinary-user frame service on tty1, using this prepared checkout")
     args = parser.parse_args()
     if os.geteuid() != 0:
         parser.error("Run this installer with sudo on the target board.")
     pwd.getpwnam(args.user)
     if not re.fullmatch(r"[a-zA-Z0-9_.-]{1,15}", args.interface) or not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", args.mac):
         parser.error("Invalid adapter interface or permanent MAC address.")
-    if args.project:
-        project = str(Path(args.project).resolve())
-        if not re.fullmatch(r"/[a-zA-Z0-9_./-]+", project) or not re.fullmatch(r"[a-zA-Z0-9_-]+", args.user):
-            parser.error("Use a project path and username without spaces or special characters for the service.")
-        if not (Path(project) / ".venv/bin/python").is_file() or not (Path(project) / "client/network/client.py").is_file():
-            parser.error("Prepare the updated checkout and its existing runtime environment before installing the frame service.")
     import dbus
     from gi.repository import GLib  # noqa: F401 -- preflight the OS dependency
     bus = dbus.SystemBus()
@@ -67,18 +59,11 @@ def main():
     nm_config.write_text("# Managed by DigitalFrame: the helper checks only while online.\n[connectivity]\ninterval=0\n")
     nm_config.chmod(0o644)
     shutil.copyfile(source / "deploy/digitalframe-network.service", "/etc/systemd/system/digitalframe-network.service")
-    if args.project:
-        unit = (source / "deploy/digitalframe.service").read_text().replace("@USER@", args.user).replace("@PROJECT@", project)
-        Path("/etc/systemd/system/digitalframe.service").write_text(unit)
     manager.Reload(dbus.UInt32(1))
     run("systemctl", "daemon-reload")
-    if args.start:
-        run("systemctl", "enable", "digitalframe-network.service")
-        run("systemctl", "restart", "digitalframe-network.service")
-        if args.project:
-            run("systemctl", "enable", "digitalframe.service")
-            run("systemctl", "restart", "digitalframe.service")
-    print("Helper installed. Enable WIFI_SETUP_ENABLED=true and CONTROL_HOST=0.0.0.0 in the frame's configuration.")
+    print("Helper files installed. No services were started or enabled; existing service enablement is unchanged.")
+    print("Hotspot hardware validation is paused. Keep WIFI_SETUP_ENABLED=false and launch the slideshow manually.")
+    print("See docs/board-recovery.md to recover a board with the earlier services already enabled.")
 
 
 if __name__ == "__main__":

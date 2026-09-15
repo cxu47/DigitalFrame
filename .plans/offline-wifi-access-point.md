@@ -2,9 +2,9 @@
 
 Date: 2026-09-13
 
-Status: implementation and board validation in progress (2026-09-14). The helper has run on the board, and the user confirmed hotspot discovery. Final phone access, HDMI, and connection-recovery checks remain pending.
+Status: board deployment paused (2026-09-15). Online playback/panel worked, but hotspot authentication, Wi-Fi recovery, and local console access failed during hardware testing. The user requires manual slideshow launch and no further board/startup changes. Work continues only in WSL until explicitly resumed. See `docs/board-recovery.md`.
 
-Implementation notes: the verified board already supplies `python3-dbus` and GLib, so the privileged helper uses those OS packages without changing the frame's custom Python/Pygame environment. Deployment optionally installs the ordinary-user frame service on tty1 as well as the network helper, keeping setup instructions and the control panel available after reboot. The board's libheif supports decoding without encoding; the image test now uses a small fixed HEIC sample.
+Implementation notes: the verified board already supplies `python3-dbus` and GLib, so the privileged helper uses those OS packages without changing the frame's custom Python/Pygame environment. The initial tty1 slideshow service has been removed from the repository, and the installer no longer offers service start/enable options. This does not undo already-installed board services. The board's libheif supports decoding without encoding; the image test now uses a small fixed HEIC sample. The behavior below remains the proposed design, not a claim of successful hardware validation.
 
 ## Agreed behavior
 

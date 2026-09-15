@@ -201,6 +201,8 @@ Other sync, image, and control-server errors appear **in red below the controls*
 
 ### Offline hotspot and Wi-Fi setup
 
+**Experimental; board deployment is paused.** Live tests found hotspot authentication/recovery failures and loss of local console access with the earlier slideshow boot service. Keep `WIFI_SETUP_ENABLED=false` and launch the app from a local terminal. The installer no longer installs a slideshow service or starts/enables services. Pulling this change does **not** disable services already installed on a board; see [board recovery](docs/board-recovery.md). The following describes the intended hotspot behavior, whose hardware validation is incomplete.
+
 The HTML panel has **Slideshow control**, **Wi-Fi control**, and **Notes** sections. With the board helper enabled, loss of internet starts a WPA2 setup hotspot. The slideshow displays the hotspot name, setup password, and current control URL in a red multiline banner **without a timeout**, including when `CONTROL_URL_DISPLAY_SECONDS=0`. It stays through every photo and failed connection attempt until internet connectivity is restored. The setup password is separate from the home-Wi-Fi password; home credentials are never displayed or logged.
 
 Join the displayed DigitalFrame network on your phone, stay connected despite its “No internet” warning, and open the displayed `http://…:8000` address. The same folder and duration forms control the running cached slideshow. Enter your home **Wi-Fi SSID** and **Wi-Fi password**, then select **Apply Wi-Fi**. This first version supports WPA2-Personal and compatible transition networks. Credentials are preserved exactly, validated on the server, and sent through a restricted local helper socket to NetworkManager. No captive portal, JavaScript polling, or internet assets are needed.
@@ -213,22 +215,20 @@ The helper chooses a private subnet avoiding known local routes and remembered u
 
 Install only on a dedicated Linux board whose adapter and driver support WPA2 AP mode and whose Wi-Fi is owned by NetworkManager. The helper uses OS `python3-dbus`, `python3-gi`, `curl`, `dnsmasq`, and `iptables`; it does not modify the frame's custom Pygame environment. The app itself remains unprivileged. The installer copies only helper code to root-owned `/opt/digitalframe-network`, creates a restricted socket service, and disables NetworkManager's separate periodic connectivity checker. The helper records adopted profiles' original autoconnect flags before disabling automatic station retries; it does not delete those profiles.
 
-After updating the board checkout and verifying its existing runtime, set these values in its `.env`:
+For normal manual use while hotspot work is paused, keep this value in `.env`:
 
 ```dotenv
-WIFI_SETUP_ENABLED=true
-CONTROL_HOST=0.0.0.0
+WIFI_SETUP_ENABLED=false
 ```
 
-For the investigated board, the explicit installation command is:
+For future development only, the staging command below installs the helper files. It does not start or enable services, install a slideshow service, or change getty/console settings. It still writes the helper configuration and NetworkManager connectivity-check configuration described above, so do not run it as part of ordinary slideshow setup:
 
 ```bash
 sudo /usr/bin/python3 deploy/install-network-helper.py \
-  --user chang --interface wlan0 --mac ac:6a:a3:29:b9:61 \
-  --project /home/chang/DigitalFrame --start
+  --user chang --interface wlan0 --mac ac:6a:a3:29:b9:61
 ```
 
-Replace these identifiers with the target board's verified values. `--project` installs an ordinary-user slideshow service on tty1, alongside the helper, so setup instructions and the panel can return after reboot. It replaces the tty1 login prompt while running; use SSH or another console for administration. Preserve the board's existing SDL device configuration. Omitting `--start` stages installation; omitting `--project` installs only the helper for a manually managed frame process. Keep the display/panel operational before conducting a live outage test. A single-radio hotspot switch disconnects Wi-Fi SSH, so keep local console access during installation.
+Replace these identifiers with the target board's verified values. The previous `--project` and `--start` options are rejected. Existing service enablement is untouched by staging. Further live tests require an independently verified local terminal and recovery path; a timer controlled by the same stalled service manager did not provide reliable recovery on this board. Preserve its custom Python/Pygame environment and SDL device configuration.
 
 Service status and logs:
 
@@ -237,7 +237,7 @@ systemctl status digitalframe digitalframe-network
 journalctl -u digitalframe -u digitalframe-network
 ```
 
-To disable the managed setup, run `sudo /usr/bin/python3 deploy/remove-network-helper.py`, then set `WIFI_SETUP_ENABLED=false`. It disables both installed services, restores recorded autoconnect flags and the normal connectivity-check configuration, and removes only its own forwarding rule. Helper files and state are retained for inspection. To manually recover SSH from a local board console, stop `digitalframe-network` and explicitly activate the saved home connection with `sudo nmcli connection up <profile-name>`; the helper must be stopped first because its waiting-for-user state is intentional.
+The existing `deploy/remove-network-helper.py` explicitly disables installed services and restores recorded network settings when systemd and NetworkManager work. It is a recovery operation, not a routine launch step. For a stalled console/service manager or an unplugged board, use the alternatives in [board recovery](docs/board-recovery.md).
 
 ### Maintenance and deployment
 
