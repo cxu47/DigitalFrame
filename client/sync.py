@@ -11,10 +11,11 @@ from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
-from .config import CACHE_DIR, GOOGLE_DRIVE_FOLDER_ID
+from .config import (CACHE_DIR, CACHE_JPEG_QUALITY, CACHE_MAX_HEIGHT, CACHE_MAX_WIDTH,
+                     GOOGLE_DRIVE_FOLDER_ID, IPHONE_JPEG_QUALITY)
 from .logging_config import configure_logging
 from .storage.google_drive import get_drive_service, list_albums, download_photo
 from .cache import MANIFEST, cached_folders, cached_photos, iphone_photo, newest_first, supported_photo
@@ -23,6 +24,10 @@ from .status import is_network_error
 
 logger = logging.getLogger(__name__)
 register_heif_opener()
+WEBP_QUALITY = 85
+CACHE_PROCESSING_PROFILE = (
+    f"fit-{CACHE_MAX_WIDTH}x{CACHE_MAX_HEIGHT}-jpeg{CACHE_JPEG_QUALITY}"
+    f"-iphone{IPHONE_JPEG_QUALITY}-webp{WEBP_QUALITY}-v2")
 
 
 @dataclass
@@ -89,6 +94,7 @@ def _catalog(albums):
                 "path": f'{folders[album["id"]]}/{names[photo["id"]]}',
                 "source_name": photo["name"],
                 "converted": iphone_photo(photo["name"]),
+                "processing": CACHE_PROCESSING_PROFILE,
                 "md5": photo.get("md5Checksum"),
                 "size": int(photo["size"]) if "size" in photo else None,
                 "modified": photo.get("modifiedTime"),
@@ -136,8 +142,8 @@ def _previous_catalog():
     return value if isinstance(value, dict) else {}
 
 
-def _same_iphone_source(previous, current):
-    if not previous or not previous.get("converted"):
+def _same_source(previous, current):
+    if not previous:
         return False
     if current.get("md5"):
         return previous.get("md5") == current["md5"]
@@ -148,30 +154,46 @@ def _same_iphone_source(previous, current):
             and previous.get("modified") == current["modified"])
 
 
-def _convert_iphone_photo(source, destination):
-    """Publish a display-sized, correctly oriented JPEG derivative."""
-    with Image.open(source) as image:
-        converted = ImageOps.exif_transpose(image)
+def _prepare_cached_photo(source, destination, entry):
+    """Create a bounded derivative when needed; return False for a direct copy."""
+    try:
+        image = Image.open(source)
+    except UnidentifiedImageError:
+        # Preserve the existing download behavior. Playback will reject an
+        # invalid image, while the next sync can repair it if Drive changes.
+        return False
+    with image:
+        oriented = ImageOps.exif_transpose(image)
         try:
-            rgb = converted if converted.mode == "RGB" else converted.convert("RGB")
-            try:
-                # Preserve aspect ratio; never exceed display resolution.
-                rgb.thumbnail((1366, 768), Image.Resampling.LANCZOS)
-
-                rgb.save(
-                    destination,
-                    format="JPEG",
-                    quality=75,
-                    optimize=True,
-                    progressive=True,
-                    subsampling="4:2:0",
-                )
-            finally:
-                if rgb is not converted:
-                    rgb.close()
+            needs_derivative = (entry["converted"] or oriented.width > CACHE_MAX_WIDTH
+                                or oriented.height > CACHE_MAX_HEIGHT)
+            if not needs_derivative:
+                return False
+            oriented.thumbnail(
+                (CACHE_MAX_WIDTH, CACHE_MAX_HEIGHT), Image.Resampling.LANCZOS)
+            suffix = Path(entry["path"]).suffix.lower()
+            if suffix in {".jpg", ".jpeg"}:
+                output = oriented if oriented.mode == "RGB" else oriented.convert("RGB")
+                try:
+                    quality = IPHONE_JPEG_QUALITY if entry["converted"] else CACHE_JPEG_QUALITY
+                    output.save(
+                        destination, format="JPEG", quality=quality,
+                        optimize=True, progressive=True, subsampling="4:2:0",
+                    )
+                finally:
+                    if output is not oriented:
+                        output.close()
+            elif suffix == ".png":
+                oriented.save(destination, format="PNG", optimize=True)
+            elif suffix == ".webp":
+                oriented.save(
+                    destination, format="WEBP", quality=WEBP_QUALITY, method=4)
+            else:
+                raise ValueError("Unsupported cached image format")
+            return True
         finally:
-            if converted is not image:
-                converted.close()
+            if oriented is not image:
+                oriented.close()
 
 
 def sync_photos(new_photos=None, *, stop_event=None, status=None):
@@ -229,7 +251,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
             logger.warning("Unable to read cached photo %s; will retrieve it from Drive", path.name)
     with TemporaryDirectory(prefix=".sync-", dir=CACHE_DIR) as staging:
         reusable = {}
-        converted_reusable = {}
+        processed_reusable = {}
         wanted_hashes = {entry["md5"] for entry in catalog["photos"].values()
                          if entry["md5"] and not entry["converted"]}
         # Temporary hard links preserve verified content through name swaps.
@@ -239,11 +261,13 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 target = Path(staging) / digest
                 os.link(path, target)
                 reusable[digest] = target
-        # A converted JPEG cannot match the source HEIC's Drive MD5. Verify it
-        # against its own SHA-256 and source metadata before reusing it.
+        # A resized or converted cache file cannot match its source Drive MD5.
+        # Verify every processed file against its own SHA-256, source identity,
+        # and the current processing profile before reusing it.
         for file_id, entry in catalog["photos"].items():
             old = previous_photos.get(file_id)
-            if not entry["converted"] or not _same_iphone_source(old, entry):
+            if (not _same_source(old, entry)
+                    or old.get("processing") != entry["processing"]):
                 continue
             try:
                 old_path = _cache_path(old["path"])
@@ -251,7 +275,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 if expected_sha and old_path in hashes and sha256_hash(old_path, stop_event) == expected_sha:
                     target = Path(staging) / f"converted-{file_id}"
                     os.link(old_path, target)
-                    converted_reusable[file_id] = (target, expected_sha)
+                    processed_reusable[file_id] = (target, expected_sha)
             except (KeyError, OSError, ValueError):
                 continue
         for folder in catalog["folders"].values():
@@ -263,20 +287,18 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
             check_cancelled(stop_event)
             destination = _cache_path(entry["path"])
             expected = entry["md5"]
-            if entry["converted"] and file_id in converted_reusable and destination.exists():
-                reusable_path, expected_sha = converted_reusable[file_id]
+            if file_id in processed_reusable and destination.exists():
+                reusable_path, expected_sha = processed_reusable[file_id]
                 if sha256_hash(destination, stop_event) == expected_sha:
                     entry["cache_sha256"] = expected_sha
                     continue
-            elif expected and hashes.get(destination) == expected:
-                continue
             temporary = Path(staging) / "download.part"
             publication = Path(staging) / "publication.part"
             try:
                 temporary.unlink(missing_ok=True)
                 publication.unlink(missing_ok=True)
-                if entry["converted"] and file_id in converted_reusable:
-                    reusable_path, expected_sha = converted_reusable[file_id]
+                if file_id in processed_reusable:
+                    reusable_path, expected_sha = processed_reusable[file_id]
                     os.link(reusable_path, publication)
                     entry["cache_sha256"] = expected_sha
                 elif expected in reusable:
@@ -291,12 +313,14 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                         raise ValueError("Downloaded bytes do not match the Google Drive checksum; will retry.")
                     if entry["size"] is not None and temporary.stat().st_size != entry["size"]:
                         raise ValueError("Downloaded size does not match Google Drive; will retry.")
-                    if entry["converted"]:
-                        _convert_iphone_photo(temporary, publication)
-                        entry["cache_sha256"] = sha256_hash(publication, stop_event)
+                    if _prepare_cached_photo(temporary, publication, entry):
+                        published = publication
                     else:
-                        publication = temporary
-                publication.replace(destination)
+                        published = temporary
+                    entry["cache_sha256"] = sha256_hash(published, stop_event)
+                else:
+                    published = publication
+                published.replace(destination)
                 if new_photos is not None:
                     new_photos.put(destination)
             except Cancelled:
@@ -325,7 +349,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                     (CACHE_DIR / folder).rmdir()
                 except OSError:
                     pass  # Unrelated non-photo files are not removed.
-        manifest = {"schema": 4, **catalog,
+        manifest = {"schema": 5, **catalog,
                     "hash": hashlib.sha256(json.dumps(catalog, sort_keys=True).encode()).hexdigest()}
         encoded = json.dumps(manifest, sort_keys=True)
         try:

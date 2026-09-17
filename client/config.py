@@ -29,6 +29,16 @@ def seconds_from_env(name, default=None):
         raise ValueError(f"{name} must be a finite number of at least 0.001 seconds.") from None
 
 
+def bounded_integer_from_env(name, default, minimum, maximum):
+    try:
+        value = int(os.getenv(name, default))
+        if not minimum <= value <= maximum:
+            raise ValueError
+        return value
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a whole number from {minimum} to {maximum}.") from None
+
+
 def __getattr__(name):
     # Module attributes remain convenient for each workflow, without requiring
     # Google credentials to open a cache-only display or display settings to sync.
@@ -48,6 +58,11 @@ def __getattr__(name):
             raise ValueError("DISPLAY_SECONDS must be a positive integer.") from None
     if name == "SELECTED_FOLDER":
         return os.getenv(name, "") or None
+    if name in {"CACHE_MAX_WIDTH", "CACHE_MAX_HEIGHT"}:
+        return bounded_integer_from_env(name, "1600" if name.endswith("WIDTH") else "900", 1, 16384)
+    if name in {"CACHE_JPEG_QUALITY", "IPHONE_JPEG_QUALITY"}:
+        return bounded_integer_from_env(
+            name, "75" if name == "IPHONE_JPEG_QUALITY" else "85", 1, 95)
     if name in {"IDLE_SECONDS", "SYNC_INTERVAL"}:
         return seconds_from_env(name)
     if name == "NETWORK_TIMEOUT":
