@@ -61,15 +61,28 @@ def test_offline_remains_idle_across_hours_events_and_restart(recovery):
     assert new.snapshot.can_submit
     assert (new.snapshot.ap_ssid, new.snapshot.ap_password) == credentials
     backend.activate_saved.assert_not_called()
-    backend.verify_upstream.assert_called_once()
+    backend.verify_upstream.assert_not_called()
 
 
-def test_online_outage_enters_ap_but_good_internet_does_not(recovery):
+def test_startup_always_uses_chooser_even_with_a_healthy_saved_connection(recovery):
     controller, backend, store, clock = recovery
     backend.verify_upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
     controller.start()
-    assert controller.snapshot.online
-    backend.ensure_access_point.assert_not_called()
+    assert controller.snapshot.state == "ap"
+    assert controller.snapshot.can_submit
+    assert "will not connect" in controller.snapshot.message
+    backend.verify_upstream.assert_not_called()
+    backend.ensure_access_point.assert_called_once()
+    assert store.data["waiting"]
+
+
+def test_selected_online_connection_enters_ap_after_outage(recovery):
+    controller, backend, store, clock = recovery
+    controller.start()
+    controller.publish(state="online", address="192.168.1.90", ssid="winter")
+    store.data["waiting"] = False
+    backend.verify_upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
+    backend.reset_mock()
     controller.event()  # A link/address event or suspected cloud failure.
     controller.step()
     assert controller.snapshot.online
@@ -118,6 +131,26 @@ def test_one_submission_waits_for_response_then_commits_or_restores_hotspot(reco
         controller.step()
         backend.connect.assert_not_called()
         backend.verify_upstream.assert_not_called()
+
+
+def test_timed_out_connection_attempt_returns_to_wifi_chooser(recovery):
+    controller, backend, store, clock = recovery
+    controller.start()
+    backend.connect.side_effect = TimeoutError("bounded connection attempt expired")
+    backend.reset_mock()
+
+    operation = controller.reserve("home", "02:00:00:00:00:01", "password")
+    controller.commit(operation)
+    clock[0] += 6
+    controller.step()
+
+    backend.connect.assert_called_once_with(
+        "home", "02:00:00:00:00:01", "password", store)
+    backend.ensure_access_point.assert_called_once()
+    assert controller.snapshot.state == "ap"
+    assert controller.snapshot.can_submit
+    assert controller.snapshot.message == (
+        "Connection attempt failed. Enter your Wi-Fi details to try again.")
 
 
 def test_uncommitted_request_expires_without_dropping_ap(recovery):
@@ -181,6 +214,7 @@ def test_failed_boot_activation_falls_back_to_ap(recovery):
     backend.activate_saved.side_effect = TimeoutError()
     controller.start()
     assert controller.snapshot.can_submit
+    backend.activate_saved.assert_not_called()
 
 
 def test_corrupt_recovery_record_does_not_attempt_upstream(tmp_path):

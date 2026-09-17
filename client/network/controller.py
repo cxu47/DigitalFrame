@@ -75,9 +75,12 @@ class NetworkController:
                 self.store.save()
             self.publish(ap_ssid=data["ap_ssid"], ap_password=data["ap_password"],
                          ap_address=data.get("ap_address", ""))
-            # Always respect a healthy Netplan connection on a fresh manual
-            # launch, even if the previous run stopped while in setup mode.
-            self.check_online()
+            # A saved OS connection must not choose a radio on the user's
+            # behalf.  Scan while Netplan still owns the link, then take the
+            # radio for the setup hotspot.  Only an access point explicitly
+            # selected in the panel may move this run into the online state.
+            self.access_point(
+                "Choose a Wi-Fi access point. The frame will not connect to a saved network automatically.")
         except Exception:
             self.unavailable()
 
