@@ -14,8 +14,8 @@ from tempfile import TemporaryDirectory
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
-from .config import (CACHE_DIR, CACHE_JPEG_QUALITY, CACHE_MAX_HEIGHT, CACHE_MAX_WIDTH,
-                     GOOGLE_DRIVE_FOLDER_ID, IPHONE_JPEG_QUALITY)
+from .config import (CACHE_DIR, CACHE_MAX_HEIGHT, CACHE_MAX_WIDTH,
+                     GOOGLE_DRIVE_FOLDER_ID, IPHONE_JPEG_QUALITY, OTHER_IMAGE_QUALITY)
 from .logging_config import configure_logging
 from .storage.google_drive import get_drive_service, list_albums, download_photo
 from .cache import MANIFEST, cached_folders, cached_photos, iphone_photo, newest_first, supported_photo
@@ -24,10 +24,9 @@ from .status import is_network_error
 
 logger = logging.getLogger(__name__)
 register_heif_opener()
-WEBP_QUALITY = 85
 CACHE_PROCESSING_PROFILE = (
-    f"fit-{CACHE_MAX_WIDTH}x{CACHE_MAX_HEIGHT}-jpeg{CACHE_JPEG_QUALITY}"
-    f"-iphone{IPHONE_JPEG_QUALITY}-webp{WEBP_QUALITY}-v2")
+    f"fit-{CACHE_MAX_WIDTH}x{CACHE_MAX_HEIGHT}-other{OTHER_IMAGE_QUALITY}"
+    f"-iphone{IPHONE_JPEG_QUALITY}-v3")
 
 
 @dataclass
@@ -175,7 +174,7 @@ def _prepare_cached_photo(source, destination, entry):
             if suffix in {".jpg", ".jpeg"}:
                 output = oriented if oriented.mode == "RGB" else oriented.convert("RGB")
                 try:
-                    quality = IPHONE_JPEG_QUALITY if entry["converted"] else CACHE_JPEG_QUALITY
+                    quality = IPHONE_JPEG_QUALITY if entry["converted"] else OTHER_IMAGE_QUALITY
                     output.save(
                         destination, format="JPEG", quality=quality,
                         optimize=True, progressive=True, subsampling="4:2:0",
@@ -187,7 +186,7 @@ def _prepare_cached_photo(source, destination, entry):
                 oriented.save(destination, format="PNG", optimize=True)
             elif suffix == ".webp":
                 oriented.save(
-                    destination, format="WEBP", quality=WEBP_QUALITY, method=4)
+                    destination, format="WEBP", quality=OTHER_IMAGE_QUALITY, method=4)
             else:
                 raise ValueError("Unsupported cached image format")
             return True

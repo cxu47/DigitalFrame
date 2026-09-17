@@ -120,7 +120,7 @@ def test_failed_env_write_does_not_apply_setting(monkeypatch, tmp_path):
     ("CACHE_MAX_WIDTH", "1600", True), ("CACHE_MAX_WIDTH", "0", False),
     ("CACHE_MAX_WIDTH", "1600.5", False),
     ("CACHE_MAX_HEIGHT", "900", True), ("CACHE_MAX_HEIGHT", "16385", False),
-    ("CACHE_JPEG_QUALITY", "85", True), ("CACHE_JPEG_QUALITY", "96", False),
+    ("OTHER_IMAGE_QUALITY", "85", True), ("OTHER_IMAGE_QUALITY", "96", False),
     ("IPHONE_JPEG_QUALITY", "75", True), ("IPHONE_JPEG_QUALITY", "0", False),
 ])
 def test_configuration_in_fresh_interpreter(name, value, valid):
@@ -136,7 +136,7 @@ def test_configuration_in_fresh_interpreter(name, value, valid):
          "assert isinstance(config.CONTROL_PORT, int); assert config.CONTROL_HOST; "
          "assert isinstance(config.CACHE_MAX_WIDTH, int); "
          "assert isinstance(config.CACHE_MAX_HEIGHT, int); "
-         "assert isinstance(config.CACHE_JPEG_QUALITY, int); "
+         "assert isinstance(config.OTHER_IMAGE_QUALITY, int); "
          "assert isinstance(config.IPHONE_JPEG_QUALITY, int); "
          "assert isinstance(config.SYNC_INTERVAL, float)"],
         env=env, capture_output=True, text=True, timeout=10,

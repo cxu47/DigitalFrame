@@ -140,7 +140,7 @@ def test_large_jpeg_is_bounded_to_1600x900_and_reused(app, monkeypatch):
         assert normalized.quantization[0][:8] == [5, 3, 3, 5, 7, 12, 15, 18]  # quality 85
     manifest = json.loads((app.cache / app.sync.MANIFEST).read_text())
     entry = manifest["photos"]["large"]
-    assert entry["processing"] == "fit-1600x900-jpeg85-iphone75-webp85-v2"
+    assert entry["processing"] == "fit-1600x900-other85-iphone75-v3"
     assert len(entry["cache_sha256"]) == 64
 
     assert app.sync.sync_photos().success

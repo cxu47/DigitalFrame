@@ -60,7 +60,7 @@ def __getattr__(name):
         return os.getenv(name, "") or None
     if name in {"CACHE_MAX_WIDTH", "CACHE_MAX_HEIGHT"}:
         return bounded_integer_from_env(name, "1600" if name.endswith("WIDTH") else "900", 1, 16384)
-    if name in {"CACHE_JPEG_QUALITY", "IPHONE_JPEG_QUALITY"}:
+    if name in {"OTHER_IMAGE_QUALITY", "IPHONE_JPEG_QUALITY"}:
         return bounded_integer_from_env(
             name, "75" if name == "IPHONE_JPEG_QUALITY" else "85", 1, 95)
     if name in {"IDLE_SECONDS", "SYNC_INTERVAL"}:
