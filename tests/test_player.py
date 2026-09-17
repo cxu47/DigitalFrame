@@ -26,6 +26,13 @@ for line in reader:
     request = json.loads(line)
     command = request["command"]
     name = command.get("name") if isinstance(command, dict) else command[0]
+    if name == "get_property":
+        delay = float(os.environ.get("FAKE_MPV_STARTUP_DELAY", "0"))
+        if delay:
+            time.sleep(delay)
+        if os.environ.get("FAKE_MPV_DROP_STARTUP_REPLY"):
+            print("simulated DRM startup failure", file=sys.stderr, flush=True)
+            continue
     if isinstance(command, dict) and "_name" in command:
         connection.sendall((json.dumps({"request_id": request["request_id"], "error": "invalid parameter"}) + "\n").encode())
         continue
@@ -107,6 +114,34 @@ def test_load_waits_until_mpv_presents_the_first_frame(
         player.close()
 
     assert elapsed >= 0.12
+
+
+def test_initial_handshake_has_a_separate_longer_timeout(
+    fake_mpv, tmp_path, allow_local_socket, monkeypatch,
+):
+    monkeypatch.setenv("FAKE_MPV_ARGS", str(tmp_path / "arguments.json"))
+    monkeypatch.setenv("FAKE_MPV_STARTUP_DELAY", "0.1")
+
+    player = MPVPlayer(
+        str(fake_mpv), startup_timeout=0.5, command_timeout=0.02,
+        load_timeout=2,
+    )
+    player.close()
+
+
+def test_failed_startup_logs_bounded_mpv_stderr(
+    fake_mpv, tmp_path, allow_local_socket, monkeypatch, caplog,
+):
+    monkeypatch.setenv("FAKE_MPV_ARGS", str(tmp_path / "arguments.json"))
+    monkeypatch.setenv("FAKE_MPV_DROP_STARTUP_REPLY", "1")
+
+    with pytest.raises(MPVError, match="did not answer"):
+        MPVPlayer(
+            str(fake_mpv), startup_timeout=0.05, command_timeout=0.05,
+            load_timeout=2,
+        )
+
+    assert "simulated DRM startup failure" in caplog.text
 
 
 def test_background_syntax_tracks_mpv_037_api_change():

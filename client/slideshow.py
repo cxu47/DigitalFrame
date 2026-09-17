@@ -13,11 +13,13 @@ from threading import Event, Lock, Thread
 from .cache import PLAYBACK_PHOTO_SUFFIXES, cached_folders, cached_photos
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from .overlay import SlideshowOverlay
-from .player import MPVPlayer
+from .player import MPVError, MPVPlayer
 from .settings import RuntimeSettings
 
 
 logger = logging.getLogger(__name__)
+MPV_START_ATTEMPTS = 3
+MPV_RETRY_SECONDS = 2
 
 
 class PhotoReadAhead:
@@ -96,6 +98,21 @@ def display_photo(player, photo_path, prepared=None):
         return False
 
 
+def _start_player():
+    """Retry only the display process while the surrounding runtime stays up."""
+    for attempt in range(1, MPV_START_ATTEMPTS + 1):
+        try:
+            return MPVPlayer()
+        except MPVError as exc:
+            logger.warning(
+                "mpv startup attempt %d/%d failed: %s",
+                attempt, MPV_START_ATTEMPTS, exc,
+            )
+            if attempt == MPV_START_ATTEMPTS:
+                raise
+            time.sleep(MPV_RETRY_SECONDS)
+
+
 def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                    new_photos=None, status=None, index=None, network=None,
                    stop_event=None):
@@ -105,7 +122,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
     bad_photos = {}
     running = True
     try:
-        player = MPVPlayer()
+        player = _start_player()
         logger.info("Slideshow started")
         current_url = control_url() if callable(control_url) else control_url
         overlay = SlideshowOverlay(player, current_url, url_display_seconds)

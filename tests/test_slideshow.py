@@ -111,6 +111,31 @@ def test_restart_request_stops_and_closes_slideshow(app):
     assert app.FakeMPV.instances[-1].closed
 
 
+def test_mpv_startup_retries_without_abandoning_slideshow(app, monkeypatch, caplog):
+    from client.player import MPVError
+
+    attempts = []
+    delays = []
+
+    def start():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise MPVError("mpv did not answer an IPC command")
+        return app.FakeMPV()
+
+    stop = Event()
+    stop.set()
+    monkeypatch.setattr(app.slideshow, "MPVPlayer", start)
+    monkeypatch.setattr(app.slideshow.time, "sleep", delays.append)
+
+    app.slideshow.show_slideshow(stop_event=stop)
+
+    assert len(attempts) == 3
+    assert delays == [app.slideshow.MPV_RETRY_SECONDS] * 2
+    assert "mpv startup attempt 2/3 failed" in caplog.text
+    assert app.FakeMPV.instances[-1].closed
+
+
 @pytest.mark.parametrize("initial,updated", [(5, 10), (5, 1)])
 def test_setting_update_applies_at_next_photo(app, monkeypatch, initial, updated):
     from client.settings import RuntimeSettings

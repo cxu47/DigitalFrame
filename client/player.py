@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import deque
 from pathlib import Path
 import re
 import socket
@@ -48,7 +49,9 @@ def _ass_text(value: str) -> str:
 class MPVPlayer:
     """Own one fullscreen mpv process for the lifetime of the slideshow."""
 
-    def __init__(self, executable="mpv", *, command_timeout=5, load_timeout=30):
+    def __init__(self, executable="mpv", *, startup_timeout=30,
+                 command_timeout=5, load_timeout=30):
+        self.startup_timeout = startup_timeout
         self.command_timeout = command_timeout
         self.load_timeout = load_timeout
         self._condition = Condition()
@@ -59,6 +62,7 @@ class MPVPlayer:
         self._file_loaded = False
         self._load_result = None
         self._closed = False
+        self._stderr_lines = deque(maxlen=80)
         parent, child = socket.socketpair()
         try:
             command = [
@@ -84,7 +88,9 @@ class MPVPlayer:
                 pass_fds=(child.fileno(),),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
                 close_fds=True,
             )
         except Exception:
@@ -93,22 +99,47 @@ class MPVPlayer:
             raise
         child.close()
         self._socket = parent
+        self._stderr_reader = Thread(
+            target=self._read_stderr, name="mpv-stderr", daemon=True)
+        self._stderr_reader.start()
         self._reader = Thread(target=self._read_messages, name="mpv-ipc", daemon=True)
         self._reader.start()
         try:
-            version = self._command(["get_property", "mpv-version"])
+            # Direct DRM initialization can be much slower on the first launch
+            # after a small board boots. Ordinary commands retain their short
+            # timeout once mpv has completed this initial handshake.
+            version = self._command(
+                ["get_property", "mpv-version"], timeout=self.startup_timeout)
             for command in _background_commands(version):
                 self._command(command)
             self._command(["define-section", "digitalframe", "ESC quit\nq quit", "force"])
             self._command(["enable-section", "digitalframe", "allow-hide-cursor"])
         except Exception:
             self.close()
+            diagnostics = self._stderr_diagnostics()
+            if diagnostics:
+                logger.error("mpv startup diagnostics:\n%s", diagnostics)
             raise
         logger.info("Display initialized with mpv %s", version)
 
     @property
     def running(self):
         return not self._closed and self.process.poll() is None
+
+    def _read_stderr(self):
+        stream = self.process.stderr
+        if stream is None:
+            return
+        try:
+            for line in stream:
+                line = line.rstrip()
+                if line:
+                    self._stderr_lines.append(line)
+        except (OSError, ValueError):
+            pass
+
+    def _stderr_diagnostics(self):
+        return "\n".join(self._stderr_lines)
 
     def _read_messages(self):
         try:
@@ -146,7 +177,7 @@ class MPVPlayer:
                 self._closed = True
                 self._condition.notify_all()
 
-    def _command(self, command):
+    def _command(self, command, *, timeout=None):
         with self._condition:
             if not self.running:
                 raise MPVError("mpv exited unexpectedly")
@@ -159,7 +190,8 @@ class MPVPlayer:
                 self._socket.sendall(payload.encode("utf-8"))
         except OSError as exc:
             raise MPVError(f"Cannot communicate with mpv: {exc}") from exc
-        deadline = time.monotonic() + self.command_timeout
+        deadline = time.monotonic() + (
+            self.command_timeout if timeout is None else timeout)
         with self._condition:
             while request_id not in self._replies and self.running:
                 remaining = deadline - time.monotonic()
@@ -254,6 +286,9 @@ class MPVPlayer:
         except OSError:
             pass
         self._reader.join(timeout=1)
+        stderr_reader = getattr(self, "_stderr_reader", None)
+        if stderr_reader is not None:
+            stderr_reader.join(timeout=1)
 
     def __enter__(self):
         return self
