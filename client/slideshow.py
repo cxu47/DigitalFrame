@@ -2,9 +2,13 @@
 
 import logging
 import math
+import os
 import time
 from collections import deque
+from pathlib import Path
 from queue import Empty
+from tempfile import NamedTemporaryFile
+from threading import Event, Lock, Thread
 
 from .cache import PLAYBACK_PHOTO_SUFFIXES, cached_folders, cached_photos
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
@@ -14,6 +18,59 @@ from .settings import RuntimeSettings
 
 
 logger = logging.getLogger(__name__)
+
+
+class PhotoReadAhead:
+    """Copy exactly one upcoming compressed photo into a temporary buffer."""
+
+    def __init__(self, path):
+        self.path = path
+        self._buffer_path = None
+        self._released = False
+        self._lock = Lock()
+        self._ready = Event()
+        Thread(target=self._read, name="photo-read-ahead", daemon=True).start()
+
+    def _read(self):
+        temporary = None
+        try:
+            memory_dir = Path("/dev/shm")
+            directory = (memory_dir if memory_dir.is_dir()
+                         and os.access(memory_dir, os.W_OK) else None)
+            with self.path.open("rb") as source, NamedTemporaryFile(
+                mode="wb", prefix="digitalframe-", suffix=self.path.suffix,
+                dir=directory, delete=False,
+            ) as destination:
+                temporary = Path(destination.name)
+                while chunk := source.read(1024 * 1024):
+                    destination.write(chunk)
+            with self._lock:
+                if not self._released:
+                    self._buffer_path = temporary
+                    temporary = None
+        except OSError:
+            # Normal playback reports missing/replaced files and skips them.
+            pass
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            self._ready.set()
+
+    @property
+    def ready(self):
+        return self._ready.is_set()
+
+    @property
+    def playback_path(self):
+        with self._lock:
+            return self._buffer_path or self.path
+
+    def release(self):
+        with self._lock:
+            self._released = True
+            temporary, self._buffer_path = self._buffer_path, None
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def get_cached_folders():
@@ -30,9 +87,8 @@ def display_message(player, message):
 
 
 def display_photo(player, photo_path, prepared=None):
-    del prepared  # Retained for compatibility with callers that wrap this function.
     try:
-        player.load(photo_path)
+        player.load(prepared or photo_path)
         logger.debug("Displayed photo: %s", photo_path.name)
         return True
     except Exception as exc:
@@ -132,6 +188,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                 return None
 
             path = next_photo()
+            read_ahead = None
             while path is not None and running:
                 if settings.selected_folder != selected:
                     break
@@ -140,7 +197,27 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                     remaining.appendleft(path)
                     seen.discard(path)
                     path = urgent
-                success = display_photo(player, path)
+                    if read_ahead is not None:
+                        read_ahead.release()
+                    read_ahead = PhotoReadAhead(path)
+                while read_ahead is not None and not read_ahead.ready and running:
+                    if not check():
+                        break
+                    # Keep the current frame visible while the sole look-ahead
+                    # buffer finishes, without making controls feel sluggish.
+                    pause(100)
+                if not running or settings.selected_folder != selected:
+                    if read_ahead is not None:
+                        read_ahead.release()
+                        read_ahead = None
+                    break
+                success = display_photo(
+                    player, path,
+                    read_ahead.playback_path if read_ahead is not None else None,
+                )
+                if read_ahead is not None:
+                    read_ahead.release()
+                    read_ahead = None
                 if success:
                     successes += 1
                     overlay.new_frame()
@@ -158,11 +235,20 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                         break
                 deadline = time.monotonic() + settings.display_seconds
                 path = next_photo()
+                if success and path is not None:
+                    read_ahead = PhotoReadAhead(path)
                 if success:
-                    while running and time.monotonic() < deadline:
+                    while running:
+                        remaining_time = deadline - time.monotonic()
+                        buffering = read_ahead is not None and not read_ahead.ready
+                        if remaining_time <= 0 and not buffering:
+                            break
                         if not check():
                             break
-                        pause(max(1, math.ceil((deadline - time.monotonic()) * 1000)))
+                        pause(max(1, math.ceil(remaining_time * 1000))
+                              if remaining_time > 0 else 100)
+            if read_ahead is not None:
+                read_ahead.release()
             if not running:
                 break
             if settings.selected_folder != selected:

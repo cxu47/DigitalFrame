@@ -51,6 +51,7 @@ def app(tmp_path, monkeypatch, isolated_environment):
     modules = SimpleNamespace(
         config=config, main=main, slideshow=slideshow, sync=sync, drive=google_drive,
     )
+    modules.RealPhotoReadAhead = slideshow.PhotoReadAhead
     modules.cache = tmp_path / "cache"
     modules.env_file = tmp_path / ".env"
     modules.env_file.write_text("DISPLAY_SECONDS=1\nSELECTED_FOLDER=\n")
@@ -95,6 +96,23 @@ def app(tmp_path, monkeypatch, isolated_environment):
     FakeMPV.wait_hook = None
     modules.FakeMPV = FakeMPV
     monkeypatch.setattr(slideshow, "MPVPlayer", FakeMPV)
+
+    class ImmediateReadAhead:
+        def __init__(self, path):
+            self.path = path
+
+        @property
+        def ready(self):
+            return True
+
+        @property
+        def playback_path(self):
+            return self.path
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(slideshow, "PhotoReadAhead", ImmediateReadAhead)
     secrets = tmp_path / "secrets"
     secrets.mkdir()
     for module in (modules.config, modules.sync, modules.slideshow):

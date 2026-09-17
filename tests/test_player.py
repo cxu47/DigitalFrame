@@ -1,6 +1,7 @@
 """Exercise the real JSON IPC transport without requiring a display or mpv."""
 
 import json
+import time
 
 import pytest
 
@@ -12,6 +13,7 @@ import json
 import os
 import socket
 import sys
+import time
 
 with open(os.environ["FAKE_MPV_ARGS"], "w", encoding="utf-8") as output:
     json.dump(sys.argv[1:], output)
@@ -34,9 +36,12 @@ for line in reader:
         connection.sendall((json.dumps({"event": "start-file", "playlist_entry_id": entry}) + "\n").encode())
         if "bad" in command[1]:
             event = {"event": "end-file", "reason": "error", "playlist_entry_id": entry, "file_error": "broken image"}
+            connection.sendall((json.dumps(event) + "\n").encode())
         else:
-            event = {"event": "file-loaded"}
-        connection.sendall((json.dumps(event) + "\n").encode())
+            connection.sendall(b'{"event":"file-loaded"}\n')
+            if "slow" in command[1]:
+                time.sleep(0.15)
+            connection.sendall(b'{"event":"playback-restart"}\n')
     if name == "quit":
         connection.sendall(b'{"event":"shutdown"}\n')
         break
@@ -82,6 +87,26 @@ def test_player_uses_fullscreen_low_overhead_ipc_and_waits_for_decode(
 
 def test_ass_overlay_text_is_escaped():
     assert _ass_text("{a}\\b\nc") == r"\{a\}\\b\Nc"
+
+
+def test_load_waits_until_mpv_presents_the_first_frame(
+    fake_mpv, tmp_path, allow_local_socket, monkeypatch,
+):
+    monkeypatch.setenv("FAKE_MPV_ARGS", str(tmp_path / "arguments.json"))
+    try:
+        player = MPVPlayer(str(fake_mpv), command_timeout=2, load_timeout=2)
+    except MPVError as exc:
+        if isinstance(exc.__cause__, PermissionError):
+            pytest.skip("sandbox blocks inherited Unix socket IPC")
+        raise
+    try:
+        started = time.monotonic()
+        player.load(tmp_path / "slow.jpg")
+        elapsed = time.monotonic() - started
+    finally:
+        player.close()
+
+    assert elapsed >= 0.12
 
 
 def test_background_syntax_tracks_mpv_037_api_change():

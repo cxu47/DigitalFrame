@@ -47,6 +47,21 @@ def test_display_photo_delegates_supported_formats_to_mpv(app, tmp_path, suffix,
     assert player.loaded == [photo]
 
 
+def test_read_ahead_retains_only_the_upcoming_file_until_release(app, tmp_path):
+    photo = tmp_path / "next.jpg"
+    contents = b"compressed-photo-bytes"
+    photo.write_bytes(contents)
+
+    buffered = app.RealPhotoReadAhead(photo)
+
+    assert buffered._ready.wait(1)
+    buffered_path = buffered.playback_path
+    assert buffered_path != photo
+    assert buffered_path.read_bytes() == contents
+    buffered.release()
+    assert not buffered_path.exists()
+
+
 def test_missing_and_corrupt_images_are_skipped(app, tmp_path):
     player = app.FakeMPV()
     corrupt = tmp_path / "corrupt.jpg"
@@ -130,6 +145,57 @@ def test_setting_update_applies_at_next_photo(app, monkeypatch, initial, updated
     assert [when for _, when in shown] == pytest.approx(
         [0, initial, initial + updated], abs=0.005,
     )
+
+
+@pytest.mark.parametrize("buffer_seconds,expected_second_photo", [(1, 3), (5, 5)])
+def test_one_photo_read_ahead_never_shortens_the_current_photo(
+    app, monkeypatch, buffer_seconds, expected_second_photo,
+):
+    from client.settings import RuntimeSettings
+
+    for name in ("a.jpg", "b.jpg", "c.jpg"):
+        make_photo(app.cache / "kids" / name)
+    shown = []
+    active_buffers = [0]
+    maximum_buffers = [0]
+    clock = clocked(app, monkeypatch, lambda player, now: len(shown) >= 2)
+    original = app.slideshow.display_photo
+
+    class DelayedReadAhead:
+        def __init__(self, path):
+            self.path = path
+            self.ready_at = clock[0] + (buffer_seconds if path.name == "b.jpg" else 0)
+            active_buffers[0] += 1
+            maximum_buffers[0] = max(maximum_buffers[0], active_buffers[0])
+
+        @property
+        def ready(self):
+            return clock[0] >= self.ready_at
+
+        @property
+        def playback_path(self):
+            return self.path
+
+        def release(self):
+            if self.path is not None:
+                active_buffers[0] -= 1
+                self.path = None
+
+    def display(player, path, prepared=None):
+        success = original(player, path, prepared)
+        if success:
+            shown.append((path.name, clock[0]))
+        return success
+
+    monkeypatch.setattr(app.slideshow, "PhotoReadAhead", DelayedReadAhead)
+    monkeypatch.setattr(app.slideshow, "display_photo", display)
+    app.slideshow.show_slideshow(RuntimeSettings(3))
+
+    assert [name for name, _ in shown] == ["a.jpg", "b.jpg"]
+    assert [when for _, when in shown] == pytest.approx(
+        [0, expected_second_photo], abs=0.005,
+    )
+    assert maximum_buffers[0] == 1
 
 
 def test_sync_arrivals_play_fifo_then_rotation_resumes(app, monkeypatch):

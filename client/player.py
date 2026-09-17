@@ -56,6 +56,7 @@ class MPVPlayer:
         self._next_request = 1
         self._replies = {}
         self._loading_id = None
+        self._file_loaded = False
         self._load_result = None
         self._closed = False
         parent, child = socket.socketpair()
@@ -124,7 +125,13 @@ class MPVPlayer:
                         event = message.get("event")
                         if event == "start-file":
                             self._loading_id = message.get("playlist_entry_id")
+                            self._file_loaded = False
                         elif event == "file-loaded":
+                            self._file_loaded = self._loading_id is not None
+                        elif event == "playback-restart" and self._file_loaded:
+                            # file-loaded can arrive before the video output has
+                            # presented the first decoded frame.  Only start the
+                            # slideshow interval once playback has really begun.
                             self._load_result = (True, None)
                         elif (event == "end-file" and message.get("reason") == "error"
                               and message.get("playlist_entry_id") == self._loading_id):
@@ -170,6 +177,7 @@ class MPVPlayer:
         with self._condition:
             self._load_result = None
             self._loading_id = None
+            self._file_loaded = False
         self.clear_overlay(2)
         self._command(["loadfile", str(path.resolve()), "replace"])
         deadline = time.monotonic() + self.load_timeout
@@ -177,7 +185,7 @@ class MPVPlayer:
             while self._load_result is None and self.running:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise MPVError("mpv timed out while loading the image")
+                    raise MPVError("mpv timed out before displaying the image")
                 self._condition.wait(remaining)
             if self._load_result is None:
                 raise MPVError("mpv exited while loading the image")
