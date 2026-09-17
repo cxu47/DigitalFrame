@@ -18,7 +18,7 @@ import sys
 
 class NoRuntimeImports(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname in {'pygame', 'client.config', 'client.main', 'client.sync', 'client.slideshow'}:
+        if fullname in {'client.player', 'client.config', 'client.main', 'client.sync', 'client.slideshow'}:
             raise AssertionError(f'Help imported {fullname}')
 
 sys.meta_path.insert(0, NoRuntimeImports())
@@ -49,6 +49,7 @@ def test_commands_dispatch_to_the_expected_workflow(app, monkeypatch, command):
     monkeypatch.setattr(app.main, "main", run)
     monkeypatch.setattr(app.sync, "sync_photos", sync)
     monkeypatch.setattr(runtime, "main", slideshow)
+    monkeypatch.setattr(cli, "require_mpv", Mock())
 
     result = CliRunner().invoke(cli.app, [command])
 
@@ -57,18 +58,11 @@ def test_commands_dispatch_to_the_expected_workflow(app, monkeypatch, command):
         assert callback.call_count == (1 if name == command else 0)
 
 
-def test_sync_works_without_pygame_and_display_commands_explain_missing_dependency(app, monkeypatch):
+def test_sync_works_without_mpv_and_display_commands_explain_missing_dependency(app, monkeypatch):
     from client import cli
 
-    original_import = cli.importlib.import_module
-
-    def without_pygame(name, *args, **kwargs):
-        if name == "pygame":
-            raise ModuleNotFoundError("No module named 'pygame'", name="pygame")
-        return original_import(name, *args, **kwargs)
-
     sync = Mock()
-    monkeypatch.setattr(cli.importlib, "import_module", without_pygame)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None)
     monkeypatch.setattr(app.sync, "sync_photos", sync)
     runner = CliRunner()
 
@@ -77,7 +71,7 @@ def test_sync_works_without_pygame_and_display_commands_explain_missing_dependen
     for command in ("run", "slideshow"):
         result = runner.invoke(cli.app, [command])
         assert result.exit_code == 1
-        assert "Pygame is required" in result.output
+        assert "mpv executable is required" in result.output
         assert "uv sync --locked --no-dev" in result.output
 
 

@@ -37,9 +37,10 @@ The DigitalFrame client is designed to:
 - One-level photo albums mirrored in the local cache, with an All/folder selector
 - Drive metadata and content checksums detect additions, edits, moves, renames, deletions, and cache corruption
 - Temporary download files to prevent incomplete images from being displayed
-- Continuous slideshow using Pygame and Pillow, with one upcoming image prepared in a worker
+- Continuous fullscreen slideshow using a single MPV process controlled through JSON IPC
 - Configurable image display duration through `DISPLAY_SECONDS` and a plain HTML control panel on the local Wi-Fi
-- Automatic EXIF orientation correction
+- HEIC/HEIF iPhone photos converted once during sync to same-stem JPEG derivatives
+- Automatic EXIF orientation correction during iPhone-format conversion; MPV honors orientation metadata for normal files
 - Fullscreen display at the current screen resolution, with proportional photo scaling and centered black bars
 - Graceful handling of missing or invalid cached images
 - Waiting screen when no cached photos are available
@@ -49,7 +50,7 @@ The DigitalFrame client is designed to:
 - Only photos directly inside immediate child folders are included. Loose root photos, deeper nested folders, and Drive shortcuts are ignored.
 - A process lock permits one sync per cache directory. Album photos in that directory are disposable copies of Drive; a successful sync removes album photos absent from Drive. Legacy loose root photos and unrelated non-photo files are left in place.
 - The project is currently a prototype and has not undergone a complete security review.
-- A slow image decode can still extend a photo interval if the next image is not ready in time. The current photo stays visible while loading finishes; keyboard handling and notifications continue.
+- A slow MPV image decode can extend a photo interval because timing starts only after MPV reports that the next file loaded successfully.
 
 ## Potential Upgrades
 
@@ -104,20 +105,31 @@ DigitalFrame is under active development. The current implementation demonstrate
 
 ### Installation and configuration
 
-DigitalFrame runs natively as the intended Linux user. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and a compatible Python interpreter (declared range: 3.12–3.14). The uv workflow was validated with uv 0.12.13 and Python 3.12.3 on Linux AArch64; the archived ARMv7/Python 3.14 board still needs migration verification. uv manages Python packages; the OS still supplies display drivers, session/device access, and any native SDL/image libraries needed by your chosen build.
+DigitalFrame runs natively as the intended Linux user. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and a compatible Python interpreter (declared range: 3.12–3.14). uv is the only Python package manager: `pyproject.toml` declares every Python dependency and `uv.lock` fixes the complete environment. MPV is a native executable rather than a Python package, so a fresh OS must provide it along with display drivers, session/device access, and native image libraries.
 
-Run these commands from the repository root for a **fresh standard display installation**:
+On a fresh Debian/Ubuntu/Armbian-style OS, install all native prerequisites first:
+
+```bash
+./deploy/install-apt-dependencies.sh
+```
+
+The idempotent installer uses `apt-get`, requesting `sudo` when it is not already running as root. It includes MPV and a display font, Python/native image build headers, TLS/download utilities, and the commands required by the optional minimal-Armbian Wi-Fi helper. It does not install uv or enable any service.
+
+The supported MPV range starts at 0.37. DigitalFrame reads `mpv-version` over IPC and handles the background-property API change introduced in 0.38. Debian 13/Trixie currently supplies `mpv 0.40.0-3+deb13u1` for `armhf`, the Banana Pi M2 Zero architecture. Verify the installed candidate and runtime version with:
+
+```bash
+apt-cache policy mpv
+mpv --version
+```
+
+Then run these commands from the repository root:
 
 ```bash
 uv sync --locked --no-dev
 cp -n .env.example .env
 ```
 
-This installs the base application, Pygame 2.6.1, FastAPI, Uvicorn, and form handling together in one uv environment. A compatible wheel or build environment must exist for the selected Python/platform. `pillow_heif` remains pinned to 1.4.0 for the earlier Banana Pi/Armbian compatibility adjustment. The `dev` group is excluded from runtime installation.
-
-For an **existing board with a working custom Pygame/SDL build**, validate this unified installation in a separate checkout/environment before migrating the working frame. The [historical display investigation](logs/README.md) records the board's interpreter, Pygame/SDL versions, and device-selection workaround, but its original Pygame build command is unknown. The normal locked package has not yet been verified on that ARMv7/Python 3.14 board.
-
-If the board needs a custom wheel, build or obtain one for its interpreter ABI and platform, record the build procedure and artifact hash, and declare a platform-specific Pygame source in `pyproject.toml` before regenerating `uv.lock`. This source must resolve reproducibly on a fresh board. The old `--inexact` approach does not establish that the now-declared Pygame dependency uses the required custom graphics stack. Keep the existing installation until visible output is verified. OS graphics libraries remain system prerequisites, and a copied laptop `.venv` is not a deployment method. [uv package sources](https://docs.astral.sh/uv/concepts/projects/dependencies/)
+This installs the application, FastAPI, Uvicorn, Pillow, Pillow-HEIF, and form handling in one locked uv environment. `pillow_heif` remains pinned to 1.4.0. On platforms without compatible wheels, the listed headers allow uv to build Pillow/Pillow-HEIF. MPV is intentionally invoked as an external process through its supported JSON IPC interface; no Python MPV wrapper is installed outside uv. A copied `.venv` is not a deployment method.
 
 In `.env`, confirm `GOOGLE_DRIVE_FOLDER_ID` and place the Google OAuth client JSON at `client/secrets/google_credentials.json` for the example configuration. Create cache/secrets directories if using custom paths. Relative paths resolve from `client/`, credential/token filenames resolve within the secrets directory, and existing environment variables override `.env`. Timing values are seconds; `DISPLAY_SECONDS` must be a positive integer (for example `5`, not `5.0`). `IDLE_SECONDS`, `SYNC_INTERVAL`, and `NETWORK_TIMEOUT` accept finite decimal values of at least 0.001 seconds. `NETWORK_TIMEOUT` defaults to 10 seconds per HTTP operation. Configuration is checked per command: cache-only playback needs no Google credentials or sync interval, and one-shot sync needs no display/control settings. `LOG_LEVEL` defaults to `INFO`.
 
@@ -132,9 +144,9 @@ uv run --no-sync digitalframe sync       # One sync; no display required
 uv run --no-sync digitalframe --help
 ```
 
-The unified installation supplies Pygame and the control server for `run` and `slideshow`. Help needs no `.env` or display dependencies; no arguments show help. For a cache-only slideshow, place photos inside album directories within the configured cache directory; a missing or empty cache shows the waiting screen. Exit the slideshow with Escape or by closing its window.
+The uv installation supplies the control server for `run` and `slideshow`; the OS supplies `mpv`. Help and one-shot sync need no display executable. For a cache-only slideshow, place MPV-readable JPEG, PNG, or WebP photos inside album directories within the configured cache directory; a missing or empty cache shows the waiting screen. Escape, `q`, or closing the MPV window exits.
 
-At each startup, the slideshow automatically uses the selected display's current resolution in fullscreen, following [Pygame's display sizing behavior](https://www.pygame.org/docs/ref/display.html#pygame.display.set_mode). It reads the resolution through the OS/SDL display backend; no screen dimensions or aspect ratio need to be configured in the app. Photos keep their original aspect ratio after EXIF orientation correction and fit entirely on screen, with black bars on the sides or top and bottom as needed. For example, a 4:3 photo on a 1280×720 display occupies 960×720 pixels with 160-pixel bars on each side; this is an example, not a fixed output size. The startup log reports the display backend, rendering surface size, and window size. Restart the app after switching HDMI displays or changing the OS display mode. If photos still appear stretched, check that the OS display resolution matches the panel's aspect ratio and that the monitor's own scaling setting preserves proportions.
+At startup, MPV creates a borderless fullscreen window at the selected display's current resolution. DigitalFrame starts it with user configuration disabled, aspect preservation enabled, pan-and-scan disabled, an infinite still-image duration, a black background, no audio, and no on-screen controller. Photos fit entirely on screen with centered black bars as needed. Python sends one filename at each photo boundary and waits for MPV's `file-loaded` event before starting that photo's interval. Separate ASS overlays provide the waiting message, control URL, settings confirmations, and persistent red network banner without holding decoded RGB buffers in Python memory. Restart the app after switching displays or changing the OS display mode.
 
 Initial Drive authorization prints a URL without opening a browser and waits up to 60 seconds for a localhost callback on port 8080; a timeout is reported and retried by background sync. The authorizing browser must reach that callback; use SSH port forwarding when authorizing a remote board. Tokens are created/refreshed in the configured secrets directory. The `slideshow` command does not initiate authorization.
 
@@ -153,7 +165,7 @@ Configured Drive folder          Local cache
 ├── fun things/                  ├── fun things/
 │   └── party.jpg                │   └── party.jpg
 ├── kids/                        ├── kids/
-│   └── portrait.heic            │   └── portrait.heic
+│   └── portrait.heic            │   └── portrait.jpg  (generated once)
 ├── summer/                      ├── summer/
 │   └── beach.jpg                │   └── beach.jpg
 └── loose.jpg  (ignored)         └── .photos.json  (sync manifest)
@@ -163,9 +175,9 @@ Every startup selects **All**, playing photos from every album. Loose photos in 
 
 Regular playback starts with the newest photo, both across **All** albums and within a selected folder. Ordering uses Google's `createdTime`: when the file was created in Drive, normally its initial upload time, rather than the camera's capture date, last edit time, or local download time. Saved timestamps keep this order available during offline restarts. Equal timestamps use alphabetical path order; photos without valid creation metadata play last, alphabetically. Existing caches gain creation timestamps on their next successful sync without downloading unchanged image bytes again.
 
-Every sync fetches all listing pages for the parent and its immediate albums, using one Google Drive connection for that pass. Only supported photo extensions are downloaded. After a complete listing, it hashes the actual cached bytes and compares them to current Drive MD5 checksums. Unchanged bytes need no download. Zero-byte files, wrong photos under existing names, and other mismatches are automatically replaced from Drive. If Drive omits a checksum, the file is downloaded again rather than trusting a previous manifest. Available remote file sizes are also checked before publication. See Google's [file metadata](https://developers.google.com/workspace/drive/api/reference/rest/v3/files) and [paginated listings](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list).
+Every sync fetches all listing pages for the parent and its immediate albums, using one Google Drive connection for that pass. JPEG, PNG, WebP, HEIC, and HEIF sources are accepted. Ordinary cached files are hashed and compared with Drive MD5 metadata. An HEIC/HEIF download is validated against its source checksum and size, decoded with Pillow/Pillow-HEIF, EXIF-transposed, and atomically published as a same-stem `.jpg`. MPV never receives a HEIC/HEIF path. The manifest stores the source identity and the derivative's SHA-256, so unchanged derivatives are verified and reused across later syncs and Drive renames instead of being converted again. A JPEG/HEIC same-stem collision gets a deterministic suffix. If Drive omits the source checksum, stable size and modification metadata identify an unchanged iPhone source; otherwise it is downloaded again. See Google's [file metadata](https://developers.google.com/workspace/drive/api/reference/rest/v3/files) and [paginated listings](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/list).
 
-The `.photos.json` manifest records the last successful remote catalog and its SHA-256 metadata hash. It is not used as proof that a local file is correct. A missing, corrupt, or outdated manifest is rebuilt from Drive; recovery never restores image backups. Renames and moves can reuse existing bytes only after their checksum matches current Drive metadata. Temporary hard links avoid copying full images while filenames are swapped, and abandoned staging directories are cleaned up on a later sync.
+The `.photos.json` manifest records the last successful remote catalog and its SHA-256 metadata hash. Ordinary source-format files never trust it as proof of local correctness. Generated JPEGs additionally require both matching source identity and a fresh match against their recorded derivative SHA-256. A missing or corrupt manifest causes iPhone sources to be downloaded and regenerated safely. Renames and moves reuse only verified bytes. Temporary hard links avoid copying full images while filenames are swapped, and abandoned staging directories are cleaned up on a later sync.
 
 Downloads stay in temporary files until their checksums and sizes pass validation. Listing failures leave cached photos intact. Failed downloads retain existing files and defer deletion cleanup until a fully successful pass. A successful sync removes supported photos inside immediate cache subfolders when they are absent from Drive, then removes empty obsolete album directories. This also reconciles stale photos when the old manifest is missing. Keep personal originals outside the cache. Duplicate names within a folder get distinct suffixes, unsafe path components are normalized, and long photo names preserve their supported extension.
 
@@ -173,7 +185,7 @@ A `.sync.lock` file prevents another process from syncing the same cache concurr
 
 New-photo priority respects the selected album. Photos from other albums join the normal rotation when you select that album or All. If the selected album disappears or is renamed during sync, selection falls back to All. An existing but empty selected album shows the waiting screen. Album listings refresh at most once per second, and after completed sync passes.
 
-While a photo is visible, a single worker prepares the next image, including the first photo of the next cycle. Pillow decoding and resizing happen on that worker; all Pygame drawing stays on the display thread. Only one upcoming image is prepared at a time, with its retained RGB pixels sized for the display. Folder changes and newly queued photos are checked at photo boundaries. A conflicting decode is allowed to finish before its result is discarded. If sync replaces a file while it is loading, the new version is prepared again. Timer sleeps stop at the remaining photo interval.
+MPV owns decoding, scaling, fullscreen rendering, keyboard input, and window-close handling. Python retains album selection, newest-first rotation, new-download FIFO priority, display timing, retry policy, control-panel settings, and network/status overlays. Folder changes and newly queued photos are applied only at photo boundaries. This removes Pygame, SDL build requirements, Pillow display-sized pixel buffers, and the Python preload worker from normal playback.
 
 Unreadable photos are skipped and reported on the control page. The same unchanged failed file is retried after 60 seconds, or sooner when sync replaces it. If no photo is readable, playback waits instead of repeatedly decoding files without a delay. Sync can repair local corruption from Drive; if the original on Drive is itself unreadable, the error remains until the source is corrected.
 
@@ -215,7 +227,7 @@ The single radio temporarily leaves hotspot mode during one bounded connection a
 
 The helper chooses a private subnet avoiding known local routes and remembered upstream prefixes; it prefers `10.42.0.1/24` when available. That address is an example, not a guarantee. The displayed URL uses the actual AP/upstream interface and listener port. Phone-side routes cannot be exhaustively checked. The minimal image keeps IPv4 forwarding disabled; the hotspot provides local board access rather than a router service.
 
-Install only on a dedicated Linux board whose adapter and driver support WPA2 AP mode and whose Wi-Fi is owned by Netplan/systemd-networkd. The helper uses the OS `wpa_supplicant`, `networkctl`, `iw`, `ip`, and `curl`, and talks to wpa_supplicant through its Unix control socket; it does not install another DHCP daemon or modify the frame's Pygame environment. The app remains unprivileged. The installer copies only helper code to root-owned `/opt/digitalframe-network`, writes one static systemd unit and its adapter configuration, and calls `daemon-reload`. It does not edit Netplan, enable or start a service, change firewall/sysctl settings, or install a boot target link.
+Install only on a dedicated Linux board whose adapter and driver support WPA2 AP mode and whose Wi-Fi is owned by Netplan/systemd-networkd. The helper uses the OS `wpa_supplicant`, `networkctl`, `iw`, `ip`, and `curl`, and talks to wpa_supplicant through its Unix control socket; it does not install another DHCP daemon or modify the frame's MPV/uv environment. The app remains unprivileged. The installer copies only helper code to root-owned `/opt/digitalframe-network`, writes one static systemd unit and its adapter configuration, and calls `daemon-reload`. It does not edit Netplan, enable or start a service, change firewall/sysctl settings, or install a boot target link.
 
 Stage the helper once:
 
@@ -224,7 +236,7 @@ sudo /usr/bin/python3 deploy/install-network-helper.py \
   --user chang --interface wlan0 --mac ac:6a:a3:29:b9:61
 ```
 
-Replace these identifiers with the target board's verified values. The previous `--project` and `--start` options are rejected. Staging refuses to replace an already enabled helper. Preserve the board's custom Python/Pygame environment and SDL device configuration.
+Replace these identifiers with the target board's verified values. The previous `--project` and `--start` options are rejected. Staging refuses to replace an already enabled helper. Preserve the board's uv environment and MPV/display configuration.
 
 Then launch from the local terminal. This starts the static helper, runs the cache-only slideshow through the already-synchronized uv environment, and stops the helper in a shell trap when the app exits. The launcher supplies safe defaults for `CACHE_FOLDER`, `DISPLAY_SECONDS`, and `IDLE_SECONDS`, so it also works before a `.env` file exists:
 
@@ -247,24 +259,24 @@ journalctl -u digitalframe -u digitalframe-network
 
 ### Maintenance and deployment
 
-`pyproject.toml` declares runtime dependencies and the development group; the generated `uv.lock` fixes their resolved versions. `requirements.txt` is no longer maintained. Install runtime packages and development tooling together with `uv sync --locked`. Resolve any board-specific Pygame source as described above before migrating that board.
+`pyproject.toml` declares runtime dependencies and the development group; the generated `uv.lock` fixes all Python packages. `requirements.txt` is not maintained. Install runtime packages and development tooling together with `uv sync --locked`. Track Python changes with `uv add`, `uv remove`, and `uv lock`; do not use ad-hoc `pip install`. MPV and native codec/display libraries remain explicit OS prerequisites.
 
 ### Automated tests
 
-After installing development tooling and Pygame, run from the repository root:
+After installing development tooling, run from the repository root:
 
 ```bash
 uv run --no-sync python -m pytest -q
 ```
 
-The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real image rendering (including HEIC and EXIF rotation), slideshow waiting/cycling/exit, CLI commands, nonblocking background sync startup, integer form validation and error recovery, updates between photos, control server lifecycle, automatic address selection, and timed URL overlay rendering/restoration. It uses temporary cache/token files, mocked cloud services, and SDL's dummy video/audio drivers. No `.env`, Google account, network access, or physical display is needed.
+The suite checks the main workflows: saved/refreshed/new Drive authorization, photo listing and chunked downloads, cache publication and retries, real HEIC-to-JPEG conversion, one-time derivative reuse, MPV playlist policy, JSON IPC framing, OSD state, CLI commands, nonblocking background sync startup, form validation, control server lifecycle, and automatic address selection. It uses temporary cache/token files, mocked cloud services, and an MPV test double. No `.env`, Google account, physical display, or physical board is required. The sandbox may skip the subprocess IPC integration check when inherited Unix sockets are prohibited.
 
-Album tests cover paginated Drive listings, ignored loose/nested photos, duplicate names, empty folders, renames, moves, updates, deletions, failed-sync recovery, and folder changes between photos while new downloads are queued. Additional tests cover actual preload threads and cycle boundaries, corrupted/wrong cache bytes, interrupted sync recovery, process locking, SSL failures, server restarts, and escaped red error history. Live Google OAuth/connectivity and visible output on the target board remain manual checks; these tests do not verify the hardware graphics stack.
+Album tests cover paginated Drive listings, ignored loose/nested photos, duplicate names, iPhone/JPEG name collisions, empty folders, renames, moves, updates, deletions, failed-sync recovery, and folder changes between photos while new downloads are queued. Additional tests cover corrupted/wrong cache bytes, interrupted sync recovery, process locking, SSL failures, server restarts, and escaped red error history. Live Google OAuth/connectivity and visible MPV output on the target remain manual checks; these tests do not verify a hardware graphics stack.
 
 ### Updating and transferring the installation
 
-For an intentional package update, edit the relevant version constraint, run `uv lock --upgrade-package PACKAGE`, review the metadata/lockfile diff, and verify the unified installation before deploying it. Use `uv lock --check` to check metadata/lockfile consistency. Keep the board's `pillow_heif` and Pygame compatibility requirements in mind when changing pins. For an external tool that specifically requires a requirements file, export one from the lockfile rather than maintaining another list; for example, `uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file /tmp/digitalframe-requirements.txt` exports the runtime dependencies. [uv project workflow](https://docs.astral.sh/uv/guides/projects/), [lockfile exports](https://docs.astral.sh/uv/concepts/projects/export/)
+For an intentional Python package update, edit the relevant version constraint, run `uv lock --upgrade-package PACKAGE`, review the metadata/lockfile diff, and verify the unified installation before deploying it. Use `uv lock --check` to check metadata/lockfile consistency. Keep Pillow-HEIF compatibility in mind when changing pins. For an external tool that specifically requires a requirements file, export one from the lockfile rather than maintaining another list; for example, `uv export --locked --no-dev --no-emit-project --format requirements.txt --output-file /tmp/digitalframe-requirements.txt` exports the runtime dependencies. [uv project workflow](https://docs.astral.sh/uv/guides/projects/), [lockfile exports](https://docs.astral.sh/uv/concepts/projects/export/)
 
-To transfer the frame, check out the same repository revision on the new machine, install its OS prerequisites and uv, select a compatible interpreter and any required declared Pygame source, supply local configuration and credentials, and synchronize the lockfile. Validate actual visible output on that machine. A startup service can eventually invoke the absolute path to `.venv/bin/digitalframe run` as the frame user, once its graphical/TTY session access is configured; startup should not resolve or install dependencies.
+To transfer the frame, check out the same repository revision on the new machine, install MPV/native prerequisites and uv, select a compatible interpreter, supply local configuration and credentials, and run `uv sync --locked --no-dev`. Validate actual visible MPV output on that machine. A startup service can eventually invoke the absolute path to `.venv/bin/digitalframe run` as the frame user, once its graphical/TTY session access is configured; startup should not resolve or install dependencies.
 
 Docker is no longer the active deployment path. For this single-user frame, native execution keeps display and host-network access straightforward; the earlier Docker configuration remains in Git history. The local control server shares the slideshow process and runtime settings. Optional board networking and systemd startup are described in the hotspot installation section; ordinary development runs leave network management disabled.

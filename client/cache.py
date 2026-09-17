@@ -7,7 +7,8 @@ from pathlib import Path
 from threading import Lock
 import time
 
-SUPPORTED_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+SOURCE_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+PLAYBACK_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 MANIFEST = ".photos.json"
 
 
@@ -57,7 +58,11 @@ def _latest(entry):
 
 
 def supported_photo(name):
-    return Path(name).suffix.lower() in SUPPORTED_PHOTO_SUFFIXES
+    return Path(name).suffix.lower() in SOURCE_PHOTO_SUFFIXES
+
+
+def iphone_photo(name):
+    return Path(name).suffix.lower() in {".heic", ".heif"}
 
 
 def cached_folders(cache):
@@ -68,11 +73,12 @@ def cached_folders(cache):
         return []
 
 
-def cached_photos(cache, folders=None, *, catalog=None):
+def cached_photos(cache, folders=None, *, catalog=None, source_formats=False):
     folders = cached_folders(cache) if folders is None else folders
     metadata = _photo_metadata(_read_catalog(cache) if catalog is None else catalog)
+    suffixes = SOURCE_PHOTO_SUFFIXES if source_formats else PLAYBACK_PHOTO_SUFFIXES
     photos = (p for folder in folders for p in (cache / folder).glob("*")
-              if not p.is_symlink() and p.is_file() and supported_photo(p.name))
+              if not p.is_symlink() and p.is_file() and p.suffix.lower() in suffixes)
     # Unknown dates follow known dates; names break ties consistently offline.
     return sorted(photos, key=lambda p: (
         newest_first(metadata.get(p.relative_to(cache).as_posix(), {}).get("created")), p))

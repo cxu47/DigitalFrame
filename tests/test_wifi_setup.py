@@ -344,35 +344,26 @@ def test_network_url_uses_ap_interface_and_actual_listener_port():
 
 def test_hotspot_banner_is_unlimited_through_changes_attempts_and_recovery(app, monkeypatch):
     from client.overlay import SlideshowOverlay
-    pygame = app.slideshow.pygame
-    pygame.init()
-    screen = pygame.display.set_mode((1280, 720))
+    player = app.FakeMPV()
     clock = [0]
     monkeypatch.setattr("client.overlay.time.monotonic", lambda: clock[0])
     state = NetworkSnapshot(state="ap", ap_ssid="DigitalFrame-TEST", ap_password="setup-password",
                             ap_address="10.42.0.1", message="Internet unavailable — cached slideshow continues.")
-    banner = SlideshowOverlay(screen, None, 0)
-    try:
-        banner.set_network_message(state.banner("http://10.42.0.1:8000"))
-        for color in ("blue", "green", "white"):
-            clock[0] += 36000
-            screen.fill(color)
-            banner.new_frame()
-            banner.show_message("Photo folder: kids", 15)
-            banner.update()
-            assert banner.deadline is None
-            assert "setup-password" in banner._network_text
-            assert "10.42.0.1:8000" in banner._network_text
-            assert banner.background is not None
-            assert banner.rect.bottom <= 720
-        banner.set_network_message(replace(state, state="connecting").banner())
-        assert "setup-password" in banner._network_text
-        assert "10.42.0.1:8000" in banner._network_text
-        clock[0] += 60
-        screen.fill("blue")
+    banner = SlideshowOverlay(player, None, 0)
+    banner.set_network_message(state.banner("http://10.42.0.1:8000"))
+    for _ in range(3):
+        clock[0] += 36000
         banner.new_frame()
-        banner.set_network_message(replace(state, state="online").banner())
-        assert banner.background is None
-        assert screen.get_at((8, 8))[:3] == (0, 0, 255)
-    finally:
-        pygame.quit()
+        banner.show_message("Photo folder: kids", 15)
+        banner.update()
+        assert banner.deadline is None
+        assert "setup-password" in banner._network_text
+        assert "10.42.0.1:8000" in player.overlays[1][0]
+        assert player.overlays[1][1] == "red"
+    banner.set_network_message(replace(state, state="connecting").banner())
+    assert "setup-password" in player.overlays[1][0]
+    assert "10.42.0.1:8000" in player.overlays[1][0]
+    clock[0] += 60
+    banner.new_frame()
+    banner.set_network_message(replace(state, state="online").banner())
+    assert 1 not in player.overlays

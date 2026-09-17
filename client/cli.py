@@ -1,6 +1,6 @@
 """Typer entry point; application imports happen only inside commands."""
 
-import importlib
+import shutil
 import sys
 
 import typer
@@ -13,17 +13,12 @@ app = typer.Typer(
 )
 
 
-def require_pygame() -> None:
-    try:
-        importlib.import_module("pygame")
-    except ModuleNotFoundError as exc:
-        if exc.name != "pygame":
-            raise
+def require_mpv() -> None:
+    if shutil.which("mpv") is None:
         typer.echo(
-            "Pygame is required for display commands. For a standard install, "
-            "run 'uv sync --locked --no-dev'. For a board with "
-            "a custom SDL build, configure its compatible Pygame source in uv. "
-            "See README.md.",
+            "The mpv executable is required for display commands. Install the OS "
+            "package named 'mpv', then run 'uv sync --locked --no-dev' for the "
+            "Python environment. See README.md.",
             err=True,
         )
         raise typer.Exit(code=1) from None
@@ -32,7 +27,7 @@ def require_pygame() -> None:
 @app.command()
 def run() -> None:
     """Synchronize, display photos, and serve the Wi-Fi control panel."""
-    require_pygame()
+    require_mpv()
     from .main import main as run_frame
 
     run_frame()
@@ -41,7 +36,7 @@ def run() -> None:
 @app.command()
 def slideshow() -> None:
     """Display cached photos with the Wi-Fi control panel; no cloud access."""
-    require_pygame()
+    require_mpv()
     from .runtime import main as run_cached
 
     run_cached()

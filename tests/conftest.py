@@ -26,9 +26,6 @@ def isolated_environment(tmp_path, monkeypatch):
         "IDLE_SECONDS": "0.01",
         "SYNC_INTERVAL": "30",
         "LOG_LEVEL": "INFO",
-        "SDL_VIDEODRIVER": "dummy",
-        "SDL_AUDIODRIVER": "dummy",
-        "PYGAME_HIDE_SUPPORT_PROMPT": "1",
     }
     for name, value in settings.items():
         monkeypatch.setenv(name, value)
@@ -55,6 +52,47 @@ def app(tmp_path, monkeypatch, isolated_environment):
         config=config, main=main, slideshow=slideshow, sync=sync, drive=google_drive,
     )
     modules.cache = tmp_path / "cache"
+    class FakeMPV:
+        instances = []
+        wait_hook = None
+
+        def __init__(self, *args, **kwargs):
+            self.running = True
+            self.closed = False
+            self.loaded = []
+            self.overlays = {}
+            self.waits = []
+            self.stops = 0
+            type(self).instances.append(self)
+
+        def load(self, path):
+            from PIL import Image
+            with Image.open(path) as image:
+                image.verify()
+            self.loaded.append(path)
+
+        def stop(self):
+            self.stops += 1
+
+        def set_overlay(self, overlay_id, text, *, color="white", position="top"):
+            self.overlays[overlay_id] = (text, color, position)
+
+        def clear_overlay(self, overlay_id):
+            self.overlays.pop(overlay_id, None)
+
+        def wait(self, milliseconds):
+            self.waits.append(milliseconds)
+            if type(self).wait_hook is not None:
+                type(self).wait_hook(self, milliseconds)
+
+        def close(self):
+            self.running = False
+            self.closed = True
+
+    FakeMPV.instances.clear()
+    FakeMPV.wait_hook = None
+    modules.FakeMPV = FakeMPV
+    monkeypatch.setattr(slideshow, "MPVPlayer", FakeMPV)
     secrets = tmp_path / "secrets"
     secrets.mkdir()
     for module in (modules.config, modules.sync, modules.slideshow):
@@ -64,36 +102,3 @@ def app(tmp_path, monkeypatch, isolated_environment):
         monkeypatch.setattr(module, "GOOGLE_CREDENTIALS_FILE", secrets / "credentials.json")
     monkeypatch.setattr(sync, "get_drive_service", Mock(return_value=Mock()))
     return modules
-
-
-@pytest.fixture
-def screen(app):
-    pygame = app.slideshow.pygame
-    pygame.init()
-    surface = pygame.display.set_mode((80, 60))
-    yield surface
-    pygame.quit()
-
-
-@pytest.fixture
-def immediate_loader(app, monkeypatch):
-    """Keep clock-driven UI tests deterministic; worker overlap is tested separately."""
-    from concurrent.futures import Future
-    from client.preload import PreparedPhoto, file_signature
-    class ImmediateLoader:
-        def __init__(self, prepare):
-            self.prepare = prepare
-        def submit(self, path, size):
-            future = Future()
-            try:
-                if path.stat().st_size == 0:
-                    prepared = PreparedPhoto(b'\0\0\0', (1, 1), file_signature(path))
-                else:
-                    prepared = self.prepare(path, size)
-                future.set_result(prepared)
-            except Exception as exc:
-                future.set_exception(exc)
-            return future
-        def close(self):
-            return True
-    monkeypatch.setattr(app.slideshow, 'PhotoLoader', ImmediateLoader)

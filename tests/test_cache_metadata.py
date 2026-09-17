@@ -86,27 +86,28 @@ def test_equal_instants_have_stable_filename_order(tmp_path):
     ("kids", ["z.jpg", "a.jpg", "z.jpg"]),
 ])
 def test_slideshow_plays_newest_first_in_all_and_selected_folder_across_cycles(
-        app, monkeypatch, immediate_loader, selection, expected):
+        app, monkeypatch, selection, expected):
     seed(app.cache)
     index = CacheIndex(app.cache)
     settings = RuntimeSettings(1, folders=index.folders)
     settings.set_folder(selection)
     slideshow = app.slideshow
     shown = []
-    clock = [0]
+    clock = [0.0]
+    monkeypatch.setattr(slideshow.time, "monotonic", lambda: clock[0])
 
-    def display(screen, path, prepared=None):
+    def display(player, path, prepared=None):
         shown.append(path.name)
+        if len(shown) >= len(expected):
+            player.running = False
         return True
 
-    def wait(milliseconds):
-        clock[0] += milliseconds
-        assert clock[0] < 6000, "Slideshow failed to complete a cycle"
+    def wait(player, milliseconds):
+        clock[0] += milliseconds / 1000
+        assert clock[0] < 6, "Slideshow failed to complete a cycle"
 
     monkeypatch.setattr(slideshow, "display_photo", display)
-    monkeypatch.setattr(slideshow, "handle_events", lambda: len(shown) < len(expected))
-    monkeypatch.setattr(slideshow.pygame.time, "get_ticks", lambda: clock[0])
-    monkeypatch.setattr(slideshow.pygame.time, "wait", wait)
+    app.FakeMPV.wait_hook = wait
     slideshow.show_slideshow(settings, index=index)
     assert shown == expected
 

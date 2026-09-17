@@ -11,14 +11,18 @@ from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
 
+from PIL import Image, ImageOps
+from pillow_heif import register_heif_opener
+
 from .config import CACHE_DIR, GOOGLE_DRIVE_FOLDER_ID
 from .logging_config import configure_logging
 from .storage.google_drive import get_drive_service, list_albums, download_photo
-from .cache import MANIFEST, cached_folders, cached_photos, newest_first, supported_photo
+from .cache import MANIFEST, cached_folders, cached_photos, iphone_photo, newest_first, supported_photo
 from .cancellation import Cancelled, check_cancelled
 from .status import is_network_error
 
 logger = logging.getLogger(__name__)
+register_heif_opener()
 
 
 @dataclass
@@ -74,10 +78,17 @@ def _catalog(albums):
     photos = {}
     for album in albums:
         supported = [photo for photo in album["photos"] if supported_photo(photo["name"])]
-        names = _names(supported)
+        playback_items = [
+            {**photo, "name": f"{Path(photo['name']).stem}.jpg"}
+            if iphone_photo(photo["name"]) else photo
+            for photo in supported
+        ]
+        names = _names(playback_items)
         for photo in supported:
             photos[photo["id"]] = {
                 "path": f'{folders[album["id"]]}/{names[photo["id"]]}',
+                "source_name": photo["name"],
+                "converted": iphone_photo(photo["name"]),
                 "md5": photo.get("md5Checksum"),
                 "size": int(photo["size"]) if "size" in photo else None,
                 "modified": photo.get("modifiedTime"),
@@ -106,6 +117,51 @@ def file_hash(path, stop_event=None):
             check_cancelled(stop_event)
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_hash(path, stop_event=None):
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            check_cancelled(stop_event)
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _previous_catalog():
+    try:
+        value = json.loads((CACHE_DIR / MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _same_iphone_source(previous, current):
+    if not previous or not previous.get("converted"):
+        return False
+    if current.get("md5"):
+        return previous.get("md5") == current["md5"]
+    # Drive normally supplies MD5 for binary HEIC/HEIF files. If it does not,
+    # stable size and modification metadata are the best available identity.
+    return (current.get("size") is not None and current.get("modified") is not None
+            and previous.get("size") == current["size"]
+            and previous.get("modified") == current["modified"])
+
+
+def _convert_iphone_photo(source, destination):
+    """Publish a display-safe, correctly oriented JPEG derivative."""
+    with Image.open(source) as image:
+        converted = ImageOps.exif_transpose(image)
+        try:
+            rgb = converted if converted.mode == "RGB" else converted.convert("RGB")
+            try:
+                rgb.save(destination, format="JPEG", quality=92, optimize=True)
+            finally:
+                if rgb is not converted:
+                    rgb.close()
+        finally:
+            if converted is not image:
+                converted.close()
 
 
 def sync_photos(new_photos=None, *, stop_event=None, status=None):
@@ -151,7 +207,9 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
             shutil.rmtree(abandoned)
     # Hash actual bytes every pass. An old/corrupt manifest is never evidence
     # that a local photo is correct; only current Drive metadata is authoritative.
-    local = cached_photos(CACHE_DIR)
+    previous = _previous_catalog()
+    previous_photos = previous.get("photos", {}) if isinstance(previous.get("photos"), dict) else {}
+    local = cached_photos(CACHE_DIR, source_formats=True)
     hashes = {}
     for path in local:
         check_cancelled(stop_event)
@@ -161,7 +219,9 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
             logger.warning("Unable to read cached photo %s; will retrieve it from Drive", path.name)
     with TemporaryDirectory(prefix=".sync-", dir=CACHE_DIR) as staging:
         reusable = {}
-        wanted_hashes = {entry["md5"] for entry in catalog["photos"].values() if entry["md5"]}
+        converted_reusable = {}
+        wanted_hashes = {entry["md5"] for entry in catalog["photos"].values()
+                         if entry["md5"] and not entry["converted"]}
         # Temporary hard links preserve verified content through name swaps.
         # They do not duplicate image bytes or serve as recovery backups.
         for path, digest in hashes.items():
@@ -169,6 +229,21 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 target = Path(staging) / digest
                 os.link(path, target)
                 reusable[digest] = target
+        # A converted JPEG cannot match the source HEIC's Drive MD5. Verify it
+        # against its own SHA-256 and source metadata before reusing it.
+        for file_id, entry in catalog["photos"].items():
+            old = previous_photos.get(file_id)
+            if not entry["converted"] or not _same_iphone_source(old, entry):
+                continue
+            try:
+                old_path = _cache_path(old["path"])
+                expected_sha = old.get("cache_sha256")
+                if expected_sha and old_path in hashes and sha256_hash(old_path, stop_event) == expected_sha:
+                    target = Path(staging) / f"converted-{file_id}"
+                    os.link(old_path, target)
+                    converted_reusable[file_id] = (target, expected_sha)
+            except (KeyError, OSError, ValueError):
+                continue
         for folder in catalog["folders"].values():
             _cache_path(f"{folder}/placeholder").parent.mkdir(exist_ok=True)
         # Across all albums, publish newer uploads first so the arrival queue
@@ -178,23 +253,40 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
             check_cancelled(stop_event)
             destination = _cache_path(entry["path"])
             expected = entry["md5"]
-            if expected and hashes.get(destination) == expected:
+            if entry["converted"] and file_id in converted_reusable and destination.exists():
+                reusable_path, expected_sha = converted_reusable[file_id]
+                if sha256_hash(destination, stop_event) == expected_sha:
+                    entry["cache_sha256"] = expected_sha
+                    continue
+            elif expected and hashes.get(destination) == expected:
                 continue
             temporary = Path(staging) / "download.part"
+            publication = Path(staging) / "publication.part"
             try:
                 temporary.unlink(missing_ok=True)
-                if expected in reusable:
+                publication.unlink(missing_ok=True)
+                if entry["converted"] and file_id in converted_reusable:
+                    reusable_path, expected_sha = converted_reusable[file_id]
+                    os.link(reusable_path, publication)
+                    entry["cache_sha256"] = expected_sha
+                elif expected in reusable:
                     os.link(reusable[expected], temporary)
                 else:
-                    logger.info("Downloading %s", entry["path"])
+                    logger.info("Downloading %s", entry["source_name"])
                     download_photo(file_id, temporary, service=service, stop_event=stop_event)
                     result.downloaded += 1
                 check_cancelled(stop_event)
-                if expected and file_hash(temporary, stop_event) != expected:
-                    raise ValueError("Downloaded bytes do not match the Google Drive checksum; will retry.")
-                if entry["size"] is not None and temporary.stat().st_size != entry["size"]:
-                    raise ValueError("Downloaded size does not match Google Drive; will retry.")
-                temporary.replace(destination)
+                if not publication.exists():
+                    if expected and file_hash(temporary, stop_event) != expected:
+                        raise ValueError("Downloaded bytes do not match the Google Drive checksum; will retry.")
+                    if entry["size"] is not None and temporary.stat().st_size != entry["size"]:
+                        raise ValueError("Downloaded size does not match Google Drive; will retry.")
+                    if entry["converted"]:
+                        _convert_iphone_photo(temporary, publication)
+                        entry["cache_sha256"] = sha256_hash(publication, stop_event)
+                    else:
+                        publication = temporary
+                publication.replace(destination)
                 if new_photos is not None:
                     new_photos.put(destination)
             except Cancelled:
@@ -206,6 +298,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 logger.exception("Unable to refresh %s; keeping existing cached files", entry["path"])
             finally:
                 temporary.unlink(missing_ok=True)
+                publication.unlink(missing_ok=True)
 
     check_cancelled(stop_event)
     # Only a fully successful pass removes obsolete album photos. This also
@@ -222,7 +315,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                     (CACHE_DIR / folder).rmdir()
                 except OSError:
                     pass  # Unrelated non-photo files are not removed.
-        manifest = {"schema": 3, **catalog,
+        manifest = {"schema": 4, **catalog,
                     "hash": hashlib.sha256(json.dumps(catalog, sort_keys=True).encode()).hexdigest()}
         encoded = json.dumps(manifest, sort_keys=True)
         try:
