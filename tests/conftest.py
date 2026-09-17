@@ -52,6 +52,8 @@ def app(tmp_path, monkeypatch, isolated_environment):
         config=config, main=main, slideshow=slideshow, sync=sync, drive=google_drive,
     )
     modules.cache = tmp_path / "cache"
+    modules.env_file = tmp_path / ".env"
+    modules.env_file.write_text("DISPLAY_SECONDS=1\nSELECTED_FOLDER=\n")
     class FakeMPV:
         instances = []
         wait_hook = None
@@ -97,6 +99,7 @@ def app(tmp_path, monkeypatch, isolated_environment):
     secrets.mkdir()
     for module in (modules.config, modules.sync, modules.slideshow):
         monkeypatch.setattr(module, "CACHE_DIR", modules.cache)
+    monkeypatch.setattr(modules.config, "ENV_FILE", modules.env_file)
     for module in (modules.config, modules.drive):
         monkeypatch.setattr(module, "GOOGLE_TOKEN_FILE", secrets / "token.json")
         monkeypatch.setattr(module, "GOOGLE_CREDENTIALS_FILE", secrets / "credentials.json")

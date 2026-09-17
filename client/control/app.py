@@ -10,7 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 from starlette.exceptions import HTTPException
 
-from ..settings import INTEGER_ERROR, RuntimeSettings, parse_display_seconds
+from ..settings import (INTEGER_ERROR, RuntimeSettings, SettingsPersistenceError,
+                        parse_display_seconds)
 from ..update import UpdateManager
 from .page import render_page
 from ..network.state import DISABLED, NetworkError, validate_credentials
@@ -130,6 +131,8 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
             settings.set_folder(folder or None)
         except ValueError as exc:
             return page(settings.display_seconds, error=str(exc), status_code=422)
+        except SettingsPersistenceError as exc:
+            return page(settings.display_seconds, error=str(exc), status_code=500)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/settings")
@@ -149,6 +152,9 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
         except ValueError:
             return page(settings.display_seconds, submitted=display_seconds or "",
                                error=INTEGER_ERROR, status_code=422)
+        except SettingsPersistenceError as exc:
+            return page(settings.display_seconds, submitted=display_seconds or "",
+                        error=str(exc), status_code=500)
         return RedirectResponse("/", status_code=303)
 
     @app.exception_handler(RequestValidationError)

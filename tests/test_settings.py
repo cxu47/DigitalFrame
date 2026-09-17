@@ -5,9 +5,10 @@ import os
 import subprocess
 import sys
 
+from dotenv import dotenv_values
 import pytest
 
-from client.settings import RuntimeSettings, parse_display_seconds
+from client.settings import RuntimeSettings, SettingsPersistenceError, parse_display_seconds
 
 
 @pytest.mark.parametrize("text,expected", [("1", 1), ("10", 10), (" 5 ", 5), ("005", 5)])
@@ -57,11 +58,55 @@ def test_snapshot_records_each_accepted_submission_only():
     assert settings.notification_snapshot() == ("Seconds per photo: 10", 2)
 
 
+def test_duration_and_folder_persist_across_runtime_instances(tmp_path):
+    state = tmp_path / ".env"
+    state.write_text("DISPLAY_SECONDS=5\nSELECTED_FOLDER=\nKEEP_ME=unchanged\n")
+    folders = lambda: ["kids", "summer"]
+    settings = RuntimeSettings(5, folders=folders, env_path=state)
+
+    settings.set_display_seconds(12)
+    settings.set_folder("summer")
+
+    saved = dotenv_values(state)
+    restored = RuntimeSettings(
+        int(saved["DISPLAY_SECONDS"]), folders=folders,
+        selected_folder=saved["SELECTED_FOLDER"], env_path=state)
+    assert restored.display_seconds == 12
+    assert restored.selected_folder == "summer"
+    assert saved["KEEP_ME"] == "unchanged"
+
+
+def test_missing_saved_folder_falls_back_to_all_and_updates_env(tmp_path):
+    state = tmp_path / ".env"
+    state.write_text("DISPLAY_SECONDS=7\nSELECTED_FOLDER=gone\n")
+
+    restored = RuntimeSettings(
+        7, folders=lambda: ["kids"], selected_folder="gone", env_path=state)
+
+    assert restored.display_seconds == 7
+    assert restored.selected_folder is None
+    assert dotenv_values(state)["SELECTED_FOLDER"] == ""
+
+
+def test_failed_env_write_does_not_apply_setting(monkeypatch, tmp_path):
+    settings = RuntimeSettings(5, folders=lambda: ["kids"], env_path=tmp_path / ".env")
+    monkeypatch.setattr("client.settings.set_key", lambda *args, **kwargs: (_ for _ in ()).throw(
+        OSError("read only")))
+
+    with pytest.raises(SettingsPersistenceError, match=".env is writable"):
+        settings.set_display_seconds(12)
+    with pytest.raises(SettingsPersistenceError, match=".env is writable"):
+        settings.set_folder("kids")
+
+    assert settings.display_seconds == 5
+    assert settings.selected_folder is None
+
+
 @pytest.mark.parametrize("name,value,valid", [
     ("DISPLAY_SECONDS", "5", True), ("DISPLAY_SECONDS", "5.0", False),
     ("DISPLAY_SECONDS", "0.2", False), ("DISPLAY_SECONDS", "0", False),
     ("DISPLAY_SECONDS", "-1", False), ("DISPLAY_SECONDS", "abc", False),
-    ("DISPLAY_SECONDS", "", False), ("DISPLAY_SECONDS", None, False),
+    ("DISPLAY_SECONDS", "", False), ("DISPLAY_SECONDS", None, True),
     ("CONTROL_PORT", "65535", True), ("CONTROL_PORT", "0", False),
     ("CONTROL_PORT", "65536", False), ("CONTROL_PORT", "8000.0", False),
     ("CONTROL_HOST", "", False),

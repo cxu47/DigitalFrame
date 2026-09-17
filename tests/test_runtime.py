@@ -160,9 +160,13 @@ def test_restart_process_uses_current_environment_without_reboot(monkeypatch):
     execute = Mock()
     monkeypatch.setattr(runtime.os, "execv", execute)
     monkeypatch.setattr(runtime.sys, "executable", "/frame/.venv/bin/python")
+    monkeypatch.setenv("DISPLAY_SECONDS", "5")
+    monkeypatch.setenv("SELECTED_FOLDER", "old")
 
     runtime._restart_process("slideshow")
 
+    assert "DISPLAY_SECONDS" not in runtime.os.environ
+    assert "SELECTED_FOLDER" not in runtime.os.environ
     execute.assert_called_once_with(
         "/frame/.venv/bin/python",
         ["/frame/.venv/bin/python", "-m", "client", "slideshow"],

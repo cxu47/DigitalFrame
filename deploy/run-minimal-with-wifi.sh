@@ -19,7 +19,6 @@ trap cleanup EXIT HUP INT TERM
 sudo /usr/bin/systemctl start digitalframe-network.service
 cd "$project_dir"
 CACHE_FOLDER="${CACHE_FOLDER:-cache}" \
-DISPLAY_SECONDS="${DISPLAY_SECONDS:-5}" \
 IDLE_SECONDS="${IDLE_SECONDS:-0.5}" \
 WIFI_SETUP_ENABLED=true \
 CONTROL_HOST=0.0.0.0 \

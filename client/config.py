@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 from .settings import parse_display_seconds
 
 CLIENT_DIR = Path(__file__).resolve().parent
-load_dotenv(CLIENT_DIR.parent / ".env")
+ENV_FILE = CLIENT_DIR.parent / ".env"
+load_dotenv(ENV_FILE)
 
 
 def required_env(name):
@@ -42,9 +43,11 @@ def __getattr__(name):
         return CLIENT_DIR / required_env("CACHE_FOLDER")
     if name == "DISPLAY_SECONDS":
         try:
-            return parse_display_seconds(required_env(name))
+            return parse_display_seconds(os.getenv(name, "5"))
         except ValueError:
             raise ValueError("DISPLAY_SECONDS must be a positive integer.") from None
+    if name == "SELECTED_FOLDER":
+        return os.getenv(name, "") or None
     if name in {"IDLE_SECONDS", "SYNC_INTERVAL"}:
         return seconds_from_env(name)
     if name == "NETWORK_TIMEOUT":
