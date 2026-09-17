@@ -149,13 +149,23 @@ def _same_iphone_source(previous, current):
 
 
 def _convert_iphone_photo(source, destination):
-    """Publish a display-safe, correctly oriented JPEG derivative."""
+    """Publish a display-sized, correctly oriented JPEG derivative."""
     with Image.open(source) as image:
         converted = ImageOps.exif_transpose(image)
         try:
             rgb = converted if converted.mode == "RGB" else converted.convert("RGB")
             try:
-                rgb.save(destination, format="JPEG", quality=92, optimize=True)
+                # Preserve aspect ratio; never exceed display resolution.
+                rgb.thumbnail((1366, 768), Image.Resampling.LANCZOS)
+
+                rgb.save(
+                    destination,
+                    format="JPEG",
+                    quality=75,
+                    optimize=True,
+                    progressive=True,
+                    subsampling="4:2:0",
+                )
             finally:
                 if rgb is not converted:
                     rgb.close()
