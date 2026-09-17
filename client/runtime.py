@@ -1,6 +1,10 @@
 """Keep display, synchronization, and the web server independent at runtime."""
 
+import logging
+import os
 from queue import SimpleQueue
+import sys
+from threading import Event
 
 from .cache import CacheIndex
 from .control.app import create_app
@@ -9,12 +13,22 @@ from .settings import RuntimeSettings
 from .status import RuntimeStatus
 
 
+logger = logging.getLogger(__name__)
+
+
+def _restart_process(command):
+    """Replace this process after its display and worker cleanup has finished."""
+    logger.info("Restarting DigitalFrame after software update")
+    os.execv(sys.executable, [sys.executable, "-m", "client", command])
+
+
 def run_display(*, sync_interval=None):
     from .config import CACHE_DIR, CONTROL_HOST, CONTROL_PORT, CONTROL_URL_DISPLAY_SECONDS, DISPLAY_SECONDS
     from .slideshow import show_slideshow
     from .config import WIFI_SETUP_ENABLED, WIFI_SOCKET
 
     status = RuntimeStatus()
+    restart_requested = Event()
     index = CacheIndex(CACHE_DIR)
     settings = RuntimeSettings(DISPLAY_SECONDS, folders=index.folders)
     network = None
@@ -26,7 +40,8 @@ def run_display(*, sync_interval=None):
             network = NetworkClient(WIFI_SOCKET, CONTROL_PORT)
             network.start()
     network_args = {"network": network} if network is not None else {}
-    panel = ControlSupervisor(create_app(settings, status, index=index, **network_args),
+    panel = ControlSupervisor(create_app(
+        settings, status, index=index, request_restart=restart_requested.set, **network_args),
                               CONTROL_HOST, CONTROL_PORT, status, **network_args)
     new_photos = SimpleQueue()
     worker = None
@@ -38,13 +53,16 @@ def run_display(*, sync_interval=None):
             worker.start()
         show_slideshow(settings, control_url=lambda: panel.url,
                        url_display_seconds=CONTROL_URL_DISPLAY_SECONDS,
-                       new_photos=new_photos, status=status, index=index, **network_args)
+                       new_photos=new_photos, status=status, index=index,
+                       stop_event=restart_requested, **network_args)
     finally:
         if worker is not None:
             worker.stop()
         panel.stop()
         if network is not None:
             network.stop()
+    if restart_requested.is_set():
+        _restart_process("run" if sync_interval is not None else "slideshow")
 
 
 def main():

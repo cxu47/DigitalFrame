@@ -98,10 +98,12 @@ def test_runtime_starts_workers_without_waiting_for_sync_and_always_stops_them(a
             calls.append('worker scheduled')
         def stop(self):
             calls.append('worker stop')
-    def display(settings, *, control_url, url_display_seconds, new_photos, status, index):
+    def display(settings, *, control_url, url_display_seconds, new_photos, status, index,
+                stop_event):
         calls.append('display')
         assert settings.display_seconds == 10
         assert control_url() == Panel.url
+        assert not stop_event.is_set()
         if failure_stage == 'display':
             raise RuntimeError('display failed')
         if failure_stage == 'interrupt':
@@ -115,6 +117,56 @@ def test_runtime_starts_workers_without_waiting_for_sync_and_always_stops_them(a
     else:
         runtime.run_display(sync_interval=30)
     assert calls == ['panel', 'worker scheduled', 'display', 'worker stop', 'panel stop']
+
+
+def test_requested_restart_cleans_up_then_reexecs_same_workflow(app, monkeypatch):
+    from client import runtime
+
+    calls = []
+    panel = Mock()
+    panel.url = "http://192.168.1.42:8000"
+    panel.start.side_effect = lambda: calls.append("panel start")
+    panel.stop.side_effect = lambda: calls.append("panel stop")
+    worker = Mock()
+    worker.start.side_effect = lambda: calls.append("worker start")
+    worker.stop.side_effect = lambda: calls.append("worker stop")
+
+    def make_app(settings, status, **kwargs):
+        kwargs["request_restart"]()
+        return object()
+
+    def display(*args, stop_event, **kwargs):
+        calls.append("display")
+        assert stop_event.is_set()
+
+    restart = Mock(side_effect=lambda command: calls.append(f"restart {command}"))
+    monkeypatch.setattr(runtime, "create_app", make_app)
+    monkeypatch.setattr(runtime, "ControlSupervisor", Mock(return_value=panel))
+    monkeypatch.setattr(app.main, "SyncWorker", Mock(return_value=worker))
+    monkeypatch.setattr(app.slideshow, "show_slideshow", display)
+    monkeypatch.setattr(runtime, "_restart_process", restart)
+
+    runtime.run_display(sync_interval=30)
+
+    assert calls == [
+        "panel start", "worker start", "display", "worker stop", "panel stop", "restart run",
+    ]
+    restart.assert_called_once_with("run")
+
+
+def test_restart_process_uses_current_environment_without_reboot(monkeypatch):
+    from client import runtime
+
+    execute = Mock()
+    monkeypatch.setattr(runtime.os, "execv", execute)
+    monkeypatch.setattr(runtime.sys, "executable", "/frame/.venv/bin/python")
+
+    runtime._restart_process("slideshow")
+
+    execute.assert_called_once_with(
+        "/frame/.venv/bin/python",
+        ["/frame/.venv/bin/python", "-m", "client", "slideshow"],
+    )
 
 
 def test_cache_only_runtime_does_not_sync(app, monkeypatch):

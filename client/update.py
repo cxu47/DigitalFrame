@@ -123,7 +123,7 @@ class UpdateManager:
             remote = self._short_sha(values, "remote")
             if result.returncode == 0 and state == "updated":
                 return self._set(UpdateSnapshot(
-                    state, f"Updated to {remote}. Restart the slideshow to run the new version."
+                    state, f"Updated to {remote}. DigitalFrame is restarting now."
                 ))
             if result.returncode == 0 and state == "current":
                 return self._set(UpdateSnapshot(state, f"Software is already current at {remote}."))

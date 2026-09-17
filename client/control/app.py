@@ -5,7 +5,7 @@ import logging
 import secrets
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Form, Request
+from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 from starlette.exceptions import HTTPException
@@ -19,7 +19,8 @@ from ..network.state import DISABLED, NetworkError, validate_credentials
 logger = logging.getLogger(__name__)
 
 
-def create_app(settings: RuntimeSettings, status=None, *, index=None, network=None, updater=None) -> FastAPI:
+def create_app(settings: RuntimeSettings, status=None, *, index=None, network=None, updater=None,
+               request_restart=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     wifi_token = secrets.token_urlsafe(32)
     update_token = secrets.token_urlsafe(32)
@@ -62,11 +63,17 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
         return RedirectResponse("/", status_code=303)
 
     @app.post("/update/apply")
-    def apply_update(request: Request, update_token: Annotated[str, Form()] = ""):
+    def apply_update(request: Request, background_tasks: BackgroundTasks,
+                     update_token: Annotated[str, Form()] = ""):
         if not valid_update_request(request, update_token):
             return page(settings.display_seconds,
                         error="Refresh this page before installing an update.", status_code=403)
-        updater.apply()
+        result = updater.apply()
+        if result.state == "updated" and request_restart is not None:
+            # Starlette runs this only after the complete HTML response has
+            # been sent, so the browser can show the restart confirmation.
+            background_tasks.add_task(request_restart)
+            return page(settings.display_seconds)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/wifi")

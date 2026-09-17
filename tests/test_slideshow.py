@@ -1,6 +1,7 @@
 """Exercise slideshow policy against an in-memory mpv test double."""
 
 from queue import SimpleQueue
+from threading import Event
 
 from PIL import Image
 import pytest
@@ -84,6 +85,15 @@ def test_slideshow_waits_then_cycles_and_closes_player(app, monkeypatch):
     assert shown == ["a.png", "b.png", "a.png"]
     assert app.FakeMPV.instances[-1].closed
     assert app.FakeMPV.instances[-1].stops == 1
+
+
+def test_restart_request_stops_and_closes_slideshow(app):
+    stop = Event()
+    stop.set()
+
+    app.slideshow.show_slideshow(stop_event=stop)
+
+    assert app.FakeMPV.instances[-1].closed
 
 
 @pytest.mark.parametrize("initial,updated", [(5, 10), (5, 1)])

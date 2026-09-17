@@ -129,7 +129,8 @@ class FakeUpdater:
 
     def apply(self):
         self.applied += 1
-        self.state = UpdateSnapshot("updated", "Updated to bbb. Restart the slideshow.")
+        self.state = UpdateSnapshot("updated", "Updated to bbb. DigitalFrame is restarting now.")
+        return self.state
 
 
 def test_update_requires_explicit_token_protected_check_before_showing_install():
@@ -137,7 +138,9 @@ def test_update_requires_explicit_token_protected_check_before_showing_install()
 
     updater = FakeUpdater()
     settings = RuntimeSettings(5)
-    with TestClient(create_app(settings, updater=updater)) as browser:
+    restarts = []
+    with TestClient(create_app(
+            settings, updater=updater, request_restart=lambda: restarts.append(True))) as browser:
         initial = browser.get("/").text
         assert 'action="/update/check"' in initial
         assert 'action="/update/apply"' not in initial
@@ -163,7 +166,34 @@ def test_update_requires_explicit_token_protected_check_before_showing_install()
         applied = browser.post(
             "/update/apply", data={"update_token": token}, follow_redirects=False,
         )
-        assert applied.status_code == 303
-        assert "Updated to bbb. Restart the slideshow." in browser.get("/").text
+        assert applied.status_code == 200
+        assert "Updated to bbb. DigitalFrame is restarting now." in applied.text
         assert 'action="/update/apply"' not in browser.get("/").text
         assert updater.applied == 1
+        assert restarts == [True]
+
+
+def test_failed_update_does_not_restart_process():
+    import re
+
+    class FailedUpdater(FakeUpdater):
+        def apply(self):
+            self.applied += 1
+            self.state = UpdateSnapshot("error", "The update was stopped safely.")
+            return self.state
+
+    updater = FailedUpdater()
+    updater.state = UpdateSnapshot("available", "Update available.", True)
+    restarts = []
+    with TestClient(create_app(
+            RuntimeSettings(5), updater=updater,
+            request_restart=lambda: restarts.append(True))) as browser:
+        initial = browser.get("/").text
+        token = re.search(r'name="update_token" value="([^"]+)"', initial)[1]
+        response = browser.post(
+            "/update/apply", data={"update_token": token}, follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert updater.applied == 1
+    assert restarts == []

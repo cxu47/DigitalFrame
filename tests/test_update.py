@@ -31,7 +31,7 @@ def test_manager_exposes_apply_only_for_a_clean_available_update(monkeypatch, tm
         "remote=2222222222222222222222222222222222222222\n"
     ))
     assert manager.apply() == UpdateSnapshot(
-        "updated", "Updated to 222222222222. Restart the slideshow to run the new version."
+        "updated", "Updated to 222222222222. DigitalFrame is restarting now."
     )
 
 

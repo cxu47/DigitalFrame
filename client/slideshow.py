@@ -41,7 +41,8 @@ def display_photo(player, photo_path, prepared=None):
 
 
 def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
-                   new_photos=None, status=None, index=None, network=None):
+                   new_photos=None, status=None, index=None, network=None,
+                   stop_event=None):
     if settings is None:
         settings = RuntimeSettings(DISPLAY_SECONDS, folders=get_cached_folders)
     player = None
@@ -56,6 +57,9 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
 
         def check():
             nonlocal running, observed_revision, current_url
+            if stop_event is not None and stop_event.is_set():
+                running = False
+                return False
             if callable(control_url):
                 url = control_url()
                 if url and url != current_url:
