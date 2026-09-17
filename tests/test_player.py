@@ -94,5 +94,6 @@ def test_background_syntax_tracks_mpv_037_api_change():
         ["set_property", "background-color", "#000000"],
     ]
     assert _background_commands("0.40.0-3+deb13u1") == _background_commands("0.38.0")
+    assert _background_commands("mpv v0.40.0") == _background_commands("0.38.0")
     with pytest.raises(MPVError, match="0.37 or newer"):
         _background_commands("0.36.0")

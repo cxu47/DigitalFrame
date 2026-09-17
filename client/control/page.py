@@ -8,6 +8,11 @@ from fastapi.responses import HTMLResponse
 from ..network.state import DISABLED
 
 
+_TEMPLATE = Template(
+    files("client.control").joinpath("templates/index.html").read_text(encoding="utf-8")
+)
+
+
 def _folder_label(name, details):
     if details is None:
         return name
@@ -19,13 +24,10 @@ def _folder_label(name, details):
 def render_page(current: int, *, submitted: str | None = None,
                 error: str = "", status_code: int = 200,
                 folders=(), selected_folder=None, issues=(), folder_details=None,
-                wifi=DISABLED, wifi_token="") -> HTMLResponse:
+                wifi=DISABLED, wifi_token="", update=None, update_token="") -> HTMLResponse:
     folder_details = folder_details or {}
-    template = Template(
-        files("client.control").joinpath("templates/index.html").read_text(encoding="utf-8")
-    )
     return HTMLResponse(
-        template.substitute(
+        _TEMPLATE.substitute(
             current=current,
             value=escape(str(current) if submitted is None else submitted, quote=True),
             error=escape(error),
@@ -43,6 +45,14 @@ def render_page(current: int, *, submitted: str | None = None,
             wifi_disabled="" if wifi.can_submit else " disabled",
             wifi_refresh_disabled="" if wifi.can_refresh else " disabled",
             wifi_readonly="" if wifi.can_submit else " readonly",
+            update_status=escape(update.message if update is not None else "Updates have not been checked."),
+            update_token=escape(update_token, quote=True),
+            update_form=(
+                '<form method="post" action="/update/apply">'
+                f'<input type="hidden" name="update_token" value="{escape(update_token, quote=True)}">'
+                '<button type="submit">Install update</button></form>'
+                if update is not None and update.can_apply else ""
+            ),
             issues="".join(
                 '<p style="color: red">'
                 f'{escape(item["time"])} — {escape(item["source"])} '

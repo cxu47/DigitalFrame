@@ -7,6 +7,7 @@ import pytest
 
 from client.control.app import create_app
 from client.settings import INTEGER_ERROR, RuntimeSettings
+from client.update import UpdateSnapshot
 
 
 @pytest.fixture
@@ -111,3 +112,58 @@ def test_folder_form_includes_empty_albums_escapes_names_and_tracks_sync_changes
         assert settings.selected_folder is None
         browser.post('/folder', data={'folder': 'summer'})
         assert RuntimeSettings(5, folders=lambda: folders).selected_folder is None
+
+
+class FakeUpdater:
+    def __init__(self):
+        self.state = UpdateSnapshot()
+        self.checked = 0
+        self.applied = 0
+
+    def snapshot(self):
+        return self.state
+
+    def check(self):
+        self.checked += 1
+        self.state = UpdateSnapshot("available", "Update available: aaa → bbb.", True)
+
+    def apply(self):
+        self.applied += 1
+        self.state = UpdateSnapshot("updated", "Updated to bbb. Restart the slideshow.")
+
+
+def test_update_requires_explicit_token_protected_check_before_showing_install():
+    import re
+
+    updater = FakeUpdater()
+    settings = RuntimeSettings(5)
+    with TestClient(create_app(settings, updater=updater)) as browser:
+        initial = browser.get("/").text
+        assert 'action="/update/check"' in initial
+        assert 'action="/update/apply"' not in initial
+        token = re.search(r'name="update_token" value="([^"]+)"', initial)[1]
+
+        assert browser.post("/update/check", data={"update_token": "wrong"}).status_code == 403
+        assert browser.post(
+            "/update/check", data={"update_token": token},
+            headers={"origin": "https://evil.invalid"},
+        ).status_code == 403
+        assert updater.checked == 0
+
+        checked = browser.post(
+            "/update/check", data={"update_token": token}, follow_redirects=False,
+        )
+        assert checked.status_code == 303
+        assert checked.headers["location"] == "/"
+        available = browser.get("/").text
+        assert "Update available: aaa → bbb." in available
+        assert 'action="/update/apply"' in available
+        assert updater.checked == 1
+
+        applied = browser.post(
+            "/update/apply", data={"update_token": token}, follow_redirects=False,
+        )
+        assert applied.status_code == 303
+        assert "Updated to bbb. Restart the slideshow." in browser.get("/").text
+        assert 'action="/update/apply"' not in browser.get("/").text
+        assert updater.applied == 1

@@ -20,6 +20,13 @@
     <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
     <button type="submit">Apply folder</button>
   </form>
+  <h2>Software update</h2>
+  <p>$update_status</p>
+  <form method="post" action="/update/check">
+    <input type="hidden" name="update_token" value="$update_token">
+    <button type="submit">Check for updates</button>
+  </form>
+  $update_form
   <h2>Wi-Fi control</h2>
   <p>$wifi_status</p>
   $wifi_current

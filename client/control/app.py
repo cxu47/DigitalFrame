@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 from starlette.exceptions import HTTPException
 
 from ..settings import INTEGER_ERROR, RuntimeSettings, parse_display_seconds
+from ..update import UpdateManager
 from .page import render_page
 from ..network.state import DISABLED, NetworkError, validate_credentials
 
@@ -18,9 +19,11 @@ from ..network.state import DISABLED, NetworkError, validate_credentials
 logger = logging.getLogger(__name__)
 
 
-def create_app(settings: RuntimeSettings, status=None, *, index=None, network=None) -> FastAPI:
+def create_app(settings: RuntimeSettings, status=None, *, index=None, network=None, updater=None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     wifi_token = secrets.token_urlsafe(32)
+    update_token = secrets.token_urlsafe(32)
+    updater = updater or UpdateManager()
 
     def page(current, **kwargs):
         folders, selected = settings.folder_snapshot()
@@ -28,6 +31,7 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
             status.clear("Control requests")
         return render_page(current, folders=folders, selected_folder=selected,
                            wifi=network.snapshot() if network is not None else DISABLED, wifi_token=wifi_token,
+                           update=updater.snapshot(), update_token=update_token,
                            folder_details=index.folder_details() if index is not None else {},
                            issues=status.panel_snapshot() if status is not None else (), **kwargs)
 
@@ -38,9 +42,32 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
         return secrets.compare_digest(token, wifi_token) and not (provided and (
             provided.scheme, provided.netloc) != (expected.scheme, expected.netloc))
 
+    def valid_update_request(request, token):
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        expected = urlsplit(str(request.base_url))
+        provided = urlsplit(origin) if origin else None
+        return secrets.compare_digest(token, update_token) and not (provided and (
+            provided.scheme, provided.netloc) != (expected.scheme, expected.netloc))
+
     @app.get("/")
     async def index_page():
         return page(settings.display_seconds)
+
+    @app.post("/update/check")
+    def check_update(request: Request, update_token: Annotated[str, Form()] = ""):
+        if not valid_update_request(request, update_token):
+            return page(settings.display_seconds,
+                        error="Refresh this page before checking for updates.", status_code=403)
+        updater.check()
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/update/apply")
+    def apply_update(request: Request, update_token: Annotated[str, Form()] = ""):
+        if not valid_update_request(request, update_token):
+            return page(settings.display_seconds,
+                        error="Refresh this page before installing an update.", status_code=403)
+        updater.apply()
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/wifi")
     def update_wifi(request: Request, bssid: Annotated[str, Form()] = "",
@@ -123,6 +150,8 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
             return page(settings.display_seconds, error="Enter the SSID and password using the Wi-Fi form.", status_code=422)
         if request.url.path == "/folder":
             return page(settings.display_seconds, error="Choose an existing folder or All.", status_code=422)
+        if request.url.path.startswith("/update"):
+            return page(settings.display_seconds, error="Refresh this page before requesting an update.", status_code=422)
         return page(settings.display_seconds, submitted="", error=INTEGER_ERROR, status_code=422)
 
     @app.exception_handler(HTTPException)

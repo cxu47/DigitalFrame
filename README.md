@@ -105,7 +105,7 @@ DigitalFrame is under active development. The current implementation demonstrate
 
 ### Installation and configuration
 
-DigitalFrame runs natively as the intended Linux user. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and a compatible Python interpreter (declared range: 3.12–3.14). uv is the only Python package manager: `pyproject.toml` declares every Python dependency and `uv.lock` fixes the complete environment. MPV is a native executable rather than a Python package, so a fresh OS must provide it along with display drivers, session/device access, and native image libraries.
+DigitalFrame runs natively as the intended Linux user with a compatible Python interpreter (declared range: 3.12–3.14). uv is the only Python package manager: `pyproject.toml` declares every Python dependency and `uv.lock` fixes the complete environment. MPV is a native executable rather than a Python package, so a fresh OS must provide it along with display drivers, session/device access, and native image libraries.
 
 On a fresh Debian/Ubuntu/Armbian-style OS, install all native prerequisites first:
 
@@ -113,7 +113,7 @@ On a fresh Debian/Ubuntu/Armbian-style OS, install all native prerequisites firs
 ./deploy/install-apt-dependencies.sh
 ```
 
-The idempotent installer uses `apt-get`, requesting `sudo` when it is not already running as root. It includes MPV and a display font, Python/native image build headers, TLS/download utilities, and the commands required by the optional minimal-Armbian Wi-Fi helper. It does not install uv or enable any service.
+Run the script as the intended DigitalFrame user, without prefixing the command with `sudo`; it elevates only its `apt-get` calls. The idempotent installer includes MPV and a display font, Vim, Python/native image build headers, TLS/download utilities, and the commands required by the optional minimal-Armbian Wi-Fi helper. If uv is missing, it runs Astral's [official standalone installer](https://docs.astral.sh/uv/getting-started/installation/) for that user. It does not enable any service.
 
 The supported MPV range starts at 0.37. DigitalFrame reads `mpv-version` over IPC and handles the background-property API change introduced in 0.38. Debian 13/Trixie currently supplies `mpv 0.40.0-3+deb13u1` for `armhf`, the Banana Pi M2 Zero architecture. Verify the installed candidate and runtime version with:
 
@@ -200,6 +200,17 @@ Address detection uses the operating system's route-selected local address, with
 Enter positive whole seconds and click **Apply**. The page uses a normal HTML form, without JavaScript or internet assets; error history uses a simple red text style. The server accepts integer text such as `5`, validates it, and redirects back to the page with the updated duration. Letters, blanks, decimal notation such as `5.0`, fractions, zero, and negative values show an error directly below the form. Invalid submissions preserve the active setting and keep the slideshow running; correct the input and submit again.
 
 Use the **Photo folder** dropdown and **Apply folder** to choose an album or **All**. This is a second plain HTML form. Each option includes its cached picture count and latest available Drive date, for example `kids — 24 pictures — updated 2026-09-12`. **All** totals the picture counts and shows the latest date across the albums. Dates are in UTC and use the latest creation/modification timestamp for the folder or its currently cached photos, not the time of the last sync check. Counts include supported files directly inside cache albums, including files awaiting repair; loose, nested, and temporary files are excluded. Empty folders show zero pictures. Missing metadata shows `updated unknown` until a successful sync supplies it. Refresh the page after a sync to see updated details and added, renamed, or removed albums.
+
+Software updates are deliberately user-initiated. **Check for updates** fetches only the `release/2.x` remote-tracking ref and compares it with the checked-out commit; it does not change application files. A separate **Install update** button appears only when the checkout is clean and strictly behind that release. Installing rechecks those conditions, acquires a per-checkout lock, runs `git merge --ff-only origin/release/2.x`, and then runs `uv sync --locked --no-dev`. The request runs synchronously: there is no polling process or background updater. A successful update does not restart DigitalFrame; restart the slideshow explicitly to load the new code. Local modifications, ahead/diverged history, concurrent updates, fetch errors, and lockfile sync failures stop automatic installation and are reported on the page.
+
+The equivalent explicit terminal commands are:
+
+```bash
+./deploy/check-update.sh
+./deploy/apply-update.sh
+```
+
+Both web forms use an unpredictable per-process token and reject a conflicting browser origin. This prevents blind cross-site submissions but is not user authentication: anyone who can open the trusted-local-network control panel can request a check and, when offered, an installation.
 
 Each accepted duration Apply action shows **“Seconds per photo: …” for 15 seconds** in the same top-left banner. **Apply folder** shows **“Photo folder: …”** for the same duration, including when All is selected or the same folder is submitted again. If sync removes the selected folder, the automatic fallback also shows **“Photo folder: All”**. It replaces any visible startup URL; the latest accepted duration or folder submission replaces the message and restarts the 15-second timer. Invalid submissions do not trigger a message. Setting confirmations still appear when the startup URL overlay is disabled.
 

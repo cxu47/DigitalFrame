@@ -21,7 +21,7 @@ class MPVError(RuntimeError):
 
 def _background_commands(version: str):
     """Return black-background commands for mpv's pre/post-0.38 option API."""
-    match = re.match(r"^(?:mpv\s+)?(\d+)\.(\d+)", version)
+    match = re.match(r"^(?:mpv\s+)?v?(\d+)\.(\d+)", version)
     if not match:
         raise MPVError(f"Cannot determine the installed mpv version: {version!r}")
     parsed = tuple(map(int, match.groups()))
