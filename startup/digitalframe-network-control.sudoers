@@ -1,0 +1,4 @@
+# Keep chang's existing sudo access. These exact passwordless commands let the
+# foreground console launcher own the static helper for exactly its lifetime.
+chang ALL=(root) NOPASSWD: /usr/bin/systemctl start digitalframe-network.service
+chang ALL=(root) NOPASSWD: /usr/bin/systemctl stop digitalframe-network.service
