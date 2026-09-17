@@ -62,15 +62,20 @@ class NetworkClient:
         except Exception:
             raise NetworkError("The Wi-Fi helper is unavailable. Cached playback continues.") from None
 
-    def reserve(self, ssid, password):
-        return self.request("reserve", ssid=ssid, password=password)["operation"]
+    def reserve(self, ssid, bssid, password):
+        return self.request("reserve", ssid=ssid, bssid=bssid, password=password)["operation"]
+
+    def connect(self, ssid, bssid, password):
+        self.request("connect", ssid=ssid, bssid=bssid, password=password)
+
+    def reserve_refresh(self):
+        return self.request("reserve_refresh")["operation"]
+
+    def refresh(self):
+        self.request("refresh")
 
     def commit(self, operation):
-        try:
-            self.request("commit", operation=operation)
-        except NetworkError:
-            # The helper expires the reservation without dropping the hotspot.
-            pass
+        self.request("commit", operation=operation)
 
     def suspect(self):
         try:
@@ -90,11 +95,14 @@ class NetworkClient:
                             line = stream.readline(8193)
                             if not line or len(line) > 8192:
                                 raise OSError("Status stream closed")
-                            self._publish(NetworkSnapshot(**json.loads(line)))
+                            values = json.loads(line)
+                            values["access_points"] = tuple(values.get("access_points", ()))
+                            self._publish(NetworkSnapshot(**values))
             except Exception:
                 previous = self.snapshot()
                 self._publish(NetworkSnapshot(state="unavailable", ap_ssid=previous.ap_ssid,
                     ap_password=previous.ap_password, ap_address=previous.ap_address,
+                    access_points=previous.access_points,
                     message="Wi-Fi helper unavailable. Cached playback continues."))
             finally:
                 self._socket = None

@@ -22,13 +22,18 @@
   </form>
   <h2>Wi-Fi control</h2>
   <p>$wifi_status</p>
+  $wifi_current
   <form method="post" action="/wifi">
     <input type="hidden" name="token" value="$wifi_token">
-    <p><label for="wifi-ssid">Wi-Fi SSID</label>
-      <input id="wifi-ssid" name="ssid" type="text" value="$wifi_ssid" autocomplete="off" aria-describedby="error"$wifi_readonly></p>
+    <p><label for="wifi-bssid">Wi-Fi access point</label>
+      <select id="wifi-bssid" name="bssid" required aria-describedby="error"$wifi_disabled>$wifi_options</select></p>
     <p><label for="wifi-password">Wi-Fi password</label>
-      <input id="wifi-password" name="password" type="password" autocomplete="new-password" aria-describedby="error"$wifi_readonly></p>
+      <input id="wifi-password" name="password" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="error"$wifi_readonly></p>
     <button type="submit"$wifi_disabled>Apply Wi-Fi</button>
+  </form>
+  <form method="post" action="/wifi/refresh">
+    <input type="hidden" name="token" value="$wifi_token">
+    <button type="submit"$wifi_refresh_disabled>Refresh access points</button>
   </form>
   <h2>Notes</h2>
   <p id="error" role="alert">$error</p>

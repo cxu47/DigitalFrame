@@ -8,7 +8,7 @@ class NetworkError(Exception):
     """A deliberately sanitized error that is safe to display."""
 
 
-def validate_credentials(ssid, password):
+def validate_credentials(ssid, password, bssid=None):
     try:
         ssid_bytes = ssid.encode("utf-8") if isinstance(ssid, str) else b""
     except UnicodeError:
@@ -20,6 +20,9 @@ def validate_credentials(ssid, password):
         or re.fullmatch(r"[0-9a-fA-F]{64}", password)
     ):
         raise NetworkError("Enter a WPA2 password of 8–63 printable ASCII characters or a 64-digit hexadecimal key.")
+    if bssid is not None and (not isinstance(bssid, str) or not re.fullmatch(
+            r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", bssid)):
+        raise NetworkError("Choose one of the listed Wi-Fi access points.")
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class NetworkSnapshot:
     ap_ssid: str = ""
     ap_password: str = field(default="", repr=False)
     ap_address: str = ""
+    access_points: tuple = ()
     revision: int = 0
 
     @property
@@ -39,7 +43,19 @@ class NetworkSnapshot:
 
     @property
     def can_submit(self):
+        return self.state == "ap" and any(point.get("supported") for point in self.access_points)
+
+    @property
+    def can_refresh(self):
         return self.state == "ap"
+
+    def access_point(self, bssid):
+        if not isinstance(bssid, str):
+            raise NetworkError("Choose one of the listed Wi-Fi access points.")
+        for point in self.access_points:
+            if point.get("supported") and point.get("bssid", "").lower() == bssid.lower():
+                return point
+        raise NetworkError("Choose one of the listed Wi-Fi access points.")
 
     def banner(self, control_url=None, port=8000):
         if self.online or self.state == "disabled":

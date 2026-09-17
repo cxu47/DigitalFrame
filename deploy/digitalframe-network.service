@@ -1,14 +1,14 @@
 [Unit]
 Description=DigitalFrame Wi-Fi setup and offline hotspot
-After=NetworkManager.service
-Wants=NetworkManager.service
+After=systemd-networkd.service
+Wants=systemd-networkd.service
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/python3 -I /opt/digitalframe-network/run.py
 Restart=on-failure
 RestartSec=2
-TimeoutStopSec=5
+TimeoutStopSec=35
 RuntimeDirectory=digitalframe-network
 RuntimeDirectoryMode=0750
 StateDirectory=digitalframe-network
@@ -20,6 +20,3 @@ ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
-
-[Install]
-WantedBy=multi-user.target

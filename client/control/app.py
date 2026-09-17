@@ -9,7 +9,6 @@ from fastapi import FastAPI, Form, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
 from starlette.exceptions import HTTPException
-from starlette.background import BackgroundTask
 
 from ..settings import INTEGER_ERROR, RuntimeSettings, parse_display_seconds
 from .page import render_page
@@ -32,38 +31,60 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
                            folder_details=index.folder_details() if index is not None else {},
                            issues=status.panel_snapshot() if status is not None else (), **kwargs)
 
+    def valid_wifi_request(request, token):
+        origin = request.headers.get("origin") or request.headers.get("referer")
+        expected = urlsplit(str(request.base_url))
+        provided = urlsplit(origin) if origin else None
+        return secrets.compare_digest(token, wifi_token) and not (provided and (
+            provided.scheme, provided.netloc) != (expected.scheme, expected.netloc))
+
     @app.get("/")
     async def index_page():
         return page(settings.display_seconds)
 
     @app.post("/wifi")
-    def update_wifi(request: Request, ssid: Annotated[str, Form()] = "",
+    def update_wifi(request: Request, bssid: Annotated[str, Form()] = "",
                     password: Annotated[str, Form()] = "", token: Annotated[str, Form()] = ""):
         # No request bodies or exception representations from this route are logged.
-        origin = request.headers.get("origin") or request.headers.get("referer")
-        expected = urlsplit(str(request.base_url))
-        provided = urlsplit(origin) if origin else None
-        if not secrets.compare_digest(token, wifi_token) or (provided and (
-                provided.scheme, provided.netloc) != (expected.scheme, expected.netloc)):
+        if not valid_wifi_request(request, token):
             return page(settings.display_seconds, error="Refresh this page before submitting Wi-Fi details.", status_code=403)
-        if network is None or not network.snapshot().can_submit:
+        snapshot = network.snapshot() if network is not None else DISABLED
+        if network is None or not snapshot.can_submit:
             return page(settings.display_seconds, error="Wi-Fi setup is not available now. Refresh for current status.", status_code=409)
         try:
-            validate_credentials(ssid, password)
+            point = snapshot.access_point(bssid)
+            validate_credentials(point["ssid"], password, point["bssid"])
         except NetworkError as exc:
             return page(settings.display_seconds, error=str(exc), status_code=422)
         try:
-            operation = network.reserve(ssid, password)
+            # Reserve and commit inside one helper request. A second socket
+            # handoff proved unreliable while serving phones on the hotspot.
+            network.connect(point["ssid"], point["bssid"], password)
         except NetworkError as exc:
             return page(settings.display_seconds, error=str(exc), status_code=409)
         except Exception:
             return page(settings.display_seconds, error="Unable to reach the Wi-Fi helper. Please try again.", status_code=503)
-        response = page(settings.display_seconds,
-                        error="Trying your Wi-Fi. Your phone will disconnect from the frame. If connection fails, reconnect to the same DigitalFrame network.")
-        # Only commit after the HTTP response has been sent. The helper grants
-        # a short handoff delay and expires an uncommitted reservation safely.
-        response.background = BackgroundTask(network.commit, operation)
-        return response
+        return page(settings.display_seconds,
+                    error="Trying your Wi-Fi. Your phone will disconnect from the frame. If connection fails, reconnect to the same DigitalFrame network.")
+
+    @app.post("/wifi/refresh")
+    def refresh_wifi(request: Request, token: Annotated[str, Form()] = ""):
+        if not valid_wifi_request(request, token):
+            return page(settings.display_seconds,
+                        error="Refresh this page before requesting a Wi-Fi scan.", status_code=403)
+        snapshot = network.snapshot() if network is not None else DISABLED
+        if network is None or not snapshot.can_refresh:
+            return page(settings.display_seconds,
+                        error="Wi-Fi scanning is not available now. Reconnect and refresh the page.", status_code=409)
+        try:
+            network.refresh()
+        except NetworkError as exc:
+            return page(settings.display_seconds, error=str(exc), status_code=409)
+        except Exception:
+            return page(settings.display_seconds,
+                        error="Unable to reach the Wi-Fi helper. Please try again.", status_code=503)
+        return page(settings.display_seconds,
+                    error="Refreshing access points. Your phone will disconnect; reconnect to the same DigitalFrame network in about 20–30 seconds.")
 
     @app.post("/folder")
     async def update_folder(request: Request, folder: Annotated[str, Form()] = ""):
@@ -98,7 +119,7 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
-        if request.url.path == "/wifi":
+        if request.url.path.startswith("/wifi"):
             return page(settings.display_seconds, error="Enter the SSID and password using the Wi-Fi form.", status_code=422)
         if request.url.path == "/folder":
             return page(settings.display_seconds, error="Choose an existing folder or All.", status_code=422)
@@ -113,7 +134,7 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
 
     @app.exception_handler(Exception)
     async def unexpected_error(request, exc):
-        if request.url.path == "/wifi":
+        if request.url.path.startswith("/wifi"):
             return render_page(settings.display_seconds, error="Wi-Fi setup encountered an error. Refresh and try again.", status_code=500)
         logger.error("Control request failed; cached playback continues",
                      exc_info=(type(exc), exc, exc.__traceback__))

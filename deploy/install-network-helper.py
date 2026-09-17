@@ -26,25 +26,25 @@ def main():
     pwd.getpwnam(args.user)
     if not re.fullmatch(r"[a-zA-Z0-9_.-]{1,15}", args.interface) or not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", args.mac):
         parser.error("Invalid adapter interface or permanent MAC address.")
-    import dbus
-    from gi.repository import GLib  # noqa: F401 -- preflight the OS dependency
-    bus = dbus.SystemBus()
-    nm = "org.freedesktop.NetworkManager"
-    root = "/org/freedesktop/NetworkManager"
-    manager = dbus.Interface(bus.get_object(nm, root), nm)
-    device = manager.GetDeviceByIpIface(args.interface)
-    props = dbus.Interface(bus.get_object(nm, device), "org.freedesktop.DBus.Properties")
-    wifi = props.GetAll(nm + ".Device.Wireless")
-    if str(wifi["PermHwAddress"]).lower() != args.mac.lower() or int(wifi["WirelessCapabilities"]) & 0x68 != 0x68:
-        parser.error("The selected adapter identity or WPA2 AP capabilities do not match.")
-    for command in ("/usr/bin/curl", "/usr/sbin/dnsmasq", "/usr/sbin/iptables"):
+    actual_mac = Path(f"/sys/class/net/{args.interface}/address")
+    if not actual_mac.is_file() or actual_mac.read_text().strip().lower() != args.mac.lower():
+        parser.error("The selected adapter identity does not match.")
+    for command in ("/usr/bin/curl", "/usr/bin/ip", "/usr/bin/networkctl", "/usr/bin/systemctl",
+                    "/usr/sbin/iw", "/sbin/wpa_supplicant"):
         if not Path(command).is_file():
             parser.error(f"Missing OS dependency: {command}")
+    modes = subprocess.run(["/usr/sbin/iw", "phy"], check=True, capture_output=True, text=True, timeout=10).stdout
+    if "* AP" not in modes:
+        parser.error("The selected adapter does not advertise access-point mode.")
+    enabled = subprocess.run(["systemctl", "is-enabled", "digitalframe-network.service"],
+                             capture_output=True, text=True, timeout=10)
+    if enabled.stdout.strip() == "enabled":
+        parser.error("Refusing to replace an enabled helper. Disable it explicitly first.")
     source = Path(__file__).resolve().parents[1]
     target = Path("/opt/digitalframe-network")
     (target / "client/network").mkdir(parents=True, exist_ok=True)
     (target / "client/__init__.py").write_text("")
-    for name in ("__init__.py", "state.py", "controller.py", "network_manager.py", "service.py"):
+    for name in ("__init__.py", "state.py", "controller.py", "networkd.py", "service.py"):
         shutil.copyfile(source / "client/network" / name, target / "client/network" / name)
     (target / "run.py").write_text(
         'import sys\nsys.path.insert(0, "/opt/digitalframe-network")\n'
@@ -55,15 +55,10 @@ def main():
     config = Path("/etc/digitalframe-network.json")
     config.write_text(json.dumps({"user": args.user, "interface": args.interface, "mac": args.mac}))
     config.chmod(0o600)
-    nm_config = Path("/etc/NetworkManager/conf.d/99-digitalframe-connectivity.conf")
-    nm_config.write_text("# Managed by DigitalFrame: the helper checks only while online.\n[connectivity]\ninterval=0\n")
-    nm_config.chmod(0o644)
     shutil.copyfile(source / "deploy/digitalframe-network.service", "/etc/systemd/system/digitalframe-network.service")
-    manager.Reload(dbus.UInt32(1))
     run("systemctl", "daemon-reload")
-    print("Helper files installed. No services were started or enabled; existing service enablement is unchanged.")
-    print("Hotspot hardware validation is paused. Keep WIFI_SETUP_ENABLED=false and launch the slideshow manually.")
-    print("See docs/board-recovery.md to recover a board with the earlier services already enabled.")
+    print("Helper staged as a static unit. No service was started or enabled and Netplan was not edited.")
+    print("Launch with deploy/run-minimal-with-wifi.sh; stopping it restores the Netplan-owned link.")
 
 
 if __name__ == "__main__":

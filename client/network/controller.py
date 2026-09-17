@@ -12,6 +12,7 @@ import time
 from .state import NetworkError, NetworkSnapshot, validate_credentials
 
 logger = logging.getLogger(__name__)
+SETUP_HOTSPOT_PASSWORD = "jamesbond"
 
 
 class StateFile:
@@ -63,20 +64,19 @@ class NetworkController:
         try:
             self.backend.prepare(self.store)
             data = self.store.data
+            changed = False
             if not data.get("ap_ssid"):
-                data.update(ap_ssid=f"DigitalFrame-{secrets.token_hex(2).upper()}",
-                            ap_password=secrets.token_urlsafe(12))
+                data["ap_ssid"] = f"DigitalFrame-{secrets.token_hex(2).upper()}"
+                changed = True
+            if data.get("ap_password") != SETUP_HOTSPOT_PASSWORD:
+                data["ap_password"] = SETUP_HOTSPOT_PASSWORD
+                changed = True
+            if changed:
                 self.store.save()
             self.publish(ap_ssid=data["ap_ssid"], ap_password=data["ap_password"],
                          ap_address=data.get("ap_address", ""))
-            if data.get("waiting"):
-                self.access_point()
-                return
-            if not self.backend.upstream() and data.get("saved_uuid"):
-                try:
-                    self.backend.activate_saved(data["saved_uuid"])
-                except Exception:
-                    pass  # A failed boot attempt falls back to the setup hotspot.
+            # Always respect a healthy Netplan connection on a fresh manual
+            # launch, even if the previous run stopped while in setup mode.
             self.check_online()
         except Exception:
             self.unavailable()
@@ -84,7 +84,7 @@ class NetworkController:
     def unavailable(self):
         self.next_check = float("inf")
         self.publish(state="unavailable", address="",
-                     message="Wi-Fi setup unavailable. Check the board adapter, NetworkManager, and helper service.")
+                     message="Wi-Fi setup unavailable. Check the board adapter, systemd-networkd, and helper service.")
 
     def check_online(self):
         info = self.backend.verify_upstream()
@@ -105,23 +105,48 @@ class NetworkController:
         self.store.data["waiting"] = True
         self.store.save()
         self.publish(state="starting_ap", address="", message="Starting the setup hotspot. Cached playback continues.")
+        points = self.snapshot.access_points
         try:
+            try:
+                scanned = self.backend.scan_access_points()
+                if scanned:
+                    points = scanned
+            except Exception:
+                pass
             address = self.backend.ensure_access_point(self.store)
             self.store.data["ap_address"] = address
             self.store.save()
-            self.publish(state="ap", address=address, ap_address=address, message=message)
+            self.publish(state="ap", address=address, ap_address=address,
+                         access_points=points, message=message)
         except Exception:
+            try:
+                self.backend.restore()
+            except Exception:
+                pass
             self.unavailable()
 
-    def reserve(self, ssid, password):
-        validate_credentials(ssid, password)
+    def reserve(self, ssid, bssid, password):
+        validate_credentials(ssid, password, bssid)
         with self.condition:
             if not self.snapshot.can_submit or self.pending is not None:
                 raise NetworkError("Wi-Fi setup is not available now. Refresh the page for its current status.")
             operation = secrets.token_urlsafe(24)
-            self.pending = {"id": operation, "ssid": ssid, "password": password,
+            self.pending = {"id": operation, "kind": "connect", "ssid": ssid,
+                            "bssid": bssid, "password": password,
                             "expires": self.clock() + 15, "ready": None}
             self.publish(state="connecting", message="Preparing your Wi-Fi connection attempt. Cached playback continues.")
+            self.condition.notify_all()
+            return operation
+
+    def reserve_refresh(self):
+        with self.condition:
+            if not self.snapshot.can_refresh or self.pending is not None:
+                raise NetworkError("Wi-Fi scanning is not available now. Reconnect and refresh the page.")
+            operation = secrets.token_urlsafe(24)
+            self.pending = {"id": operation, "kind": "refresh",
+                            "expires": self.clock() + 15, "ready": None}
+            self.publish(state="refreshing",
+                         message="Preparing a fresh Wi-Fi scan. The setup hotspot will briefly disconnect.")
             self.condition.notify_all()
             return operation
 
@@ -130,7 +155,8 @@ class NetworkController:
             if self.pending is None or not secrets.compare_digest(self.pending["id"], operation):
                 raise NetworkError("This Wi-Fi request has expired. Refresh and try again.")
             if self.pending["ready"] is None:
-                self.pending["ready"] = self.clock() + 2
+                self.pending["ready"] = self.clock() + 5
+                logger.info("Wi-Fi request committed: %s", self.pending["kind"])
                 self.condition.notify_all()
 
     def event(self, *, recover=False):
@@ -156,17 +182,24 @@ class NetworkController:
                 self.pending = None
         try:
             if pending:
-                self.publish(message="Trying your Wi-Fi. Cached playback continues.")
-                # Backend owns bounded activation, candidate rollback, and persistence.
-                info = self.backend.connect(pending["ssid"], pending["password"], self.store)
-                if info:
-                    self.store.data["waiting"] = False
-                    self.store.save()
-                    self.publish(state="online", ssid=info["ssid"], address=info["address"],
-                                 message="Connected. Rejoin your home Wi-Fi and open the URL on the slideshow.")
-                    self.next_check = self.clock() + self.interval
+                if pending["kind"] == "refresh":
+                    self.publish(message="Scanning for all nearby Wi-Fi access points.")
+                    self.backend.restore()
+                    self.access_point("Scan refreshed. Choose an access point and enter its password.")
                 else:
-                    self.access_point("Could not connect with internet access. Check the SSID and password, then try again.")
+                    self.publish(message="Trying your Wi-Fi. Association and DHCP may take up to one minute.")
+                    info = self.backend.connect(
+                        pending["ssid"], pending["bssid"], pending["password"], self.store)
+                    if info:
+                        self.store.data["waiting"] = False
+                        self.store.save()
+                        self.publish(state="online", ssid=info["ssid"], address=info["address"],
+                                     message="Connected. Rejoin your home Wi-Fi and open the URL on the slideshow.")
+                        self.next_check = self.clock() + self.interval
+                    else:
+                        message = getattr(self.backend, "last_failure", "") or (
+                            "Could not connect with internet access. Check the password and try again.")
+                        self.access_point(message)
             elif self.snapshot.online and (changed or self.clock() >= self.next_check):
                 self.check_online()
             elif changed and self.snapshot.state == "ap" and not self.backend.ap_running():

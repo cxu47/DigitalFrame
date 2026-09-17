@@ -30,9 +30,18 @@ def render_page(current: int, *, submitted: str | None = None,
             value=escape(str(current) if submitted is None else submitted, quote=True),
             error=escape(error),
             wifi_status=escape(wifi.message),
-            wifi_ssid=escape(wifi.ssid, quote=True),
+            wifi_current=(f'<p>Current Wi-Fi: {escape(wifi.ssid)}</p>' if wifi.ssid else ""),
+            wifi_options="".join(
+                f'<option value="{escape(point["bssid"], quote=True)}"'
+                f'{"" if point.get("supported") and wifi.state == "ap" else " disabled"}>'
+                f'{escape(point["ssid"])} — {escape(point["bssid"])} — '
+                f'ch {point.get("channel") or "?"} — {point.get("signal", "?")} dBm — '
+                f'{escape(point.get("security", "Unknown"))}</option>'
+                for point in wifi.access_points
+            ) or '<option value="" disabled selected>No access points found; use Refresh access points below</option>',
             wifi_token=escape(wifi_token, quote=True),
             wifi_disabled="" if wifi.can_submit else " disabled",
+            wifi_refresh_disabled="" if wifi.can_refresh else " disabled",
             wifi_readonly="" if wifi.can_submit else " readonly",
             issues="".join(
                 '<p style="color: red">'

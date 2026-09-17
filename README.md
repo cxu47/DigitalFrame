@@ -201,34 +201,40 @@ Other sync, image, and control-server errors appear **in red below the controls*
 
 ### Offline hotspot and Wi-Fi setup
 
-**Experimental; board deployment is paused.** Live tests found hotspot authentication/recovery failures and loss of local console access with the earlier slideshow boot service. Keep `WIFI_SETUP_ENABLED=false` and launch the app from a local terminal. The installer no longer installs a slideshow service or starts/enables services. Pulling this change does **not** disable services already installed on a board; see [board recovery](docs/board-recovery.md). The following describes the intended hotspot behavior, whose hardware validation is incomplete.
+**Experimental and manually launched.** The minimal-Armbian implementation uses the image's existing Netplan, `systemd-networkd`, and `wpa_supplicant`; it does not install NetworkManager. Nothing is enabled at boot and no slideshow service or console/getty setting is installed. The helper is a static unit that runs only through the terminal launcher below. Its networkd override and candidate credentials live below `/run`, so stopping the launcher or rebooting returns ownership to the unchanged Netplan configuration.
 
-The HTML panel has **Slideshow control**, **Wi-Fi control**, and **Notes** sections. With the board helper enabled, loss of internet starts a WPA2 setup hotspot. The slideshow displays the hotspot name, setup password, and current control URL in a red multiline banner **without a timeout**, including when `CONTROL_URL_DISPLAY_SECONDS=0`. It stays through every photo and failed connection attempt until internet connectivity is restored. The setup password is separate from the home-Wi-Fi password; home credentials are never displayed or logged.
+The HTML panel has **Slideshow control**, **Wi-Fi control**, and **Notes** sections. With the board helper enabled, loss of internet starts a WPA2 setup hotspot. The slideshow displays the hotspot name, setup password (`jamesbond`), and current control URL in a red multiline banner **without a timeout**, including when `CONTROL_URL_DISPLAY_SECONDS=0`. It stays through every photo and failed connection attempt until internet connectivity is restored. The setup password is separate from the home-Wi-Fi password. At the owner's request, the home-Wi-Fi password input is visible while typing; the credential is not echoed in responses or logs.
 
-Join the displayed DigitalFrame network on your phone, stay connected despite its “No internet” warning, and open the displayed `http://…:8000` address. The same folder and duration forms control the running cached slideshow. Enter your home **Wi-Fi SSID** and **Wi-Fi password**, then select **Apply Wi-Fi**. This first version supports WPA2-Personal and compatible transition networks. Credentials are preserved exactly, validated on the server, and sent through a restricted local helper socket to NetworkManager. No captive portal, JavaScript polling, or internet assets are needed.
+Join the displayed DigitalFrame network on your phone, stay connected despite its “No internet” warning, and open the displayed `http://…:8000` address. The same folder and duration forms control the running cached slideshow. Choose an individual access point and enter its **Wi-Fi password**, then select **Apply Wi-Fi**. Mesh nodes and satellites that share an SSID remain separate choices identified by BSSID, channel, and signal. This version supports WPA2-Personal and compatible transition networks. The password is validated and sent through a restricted local helper socket; only a derived WPA PSK is written to a root-only volatile file, which is deleted when the helper stops. No captive portal, JavaScript polling, or internet assets are needed.
 
-The single radio temporarily leaves hotspot mode during one bounded connection attempt. On failure, it restores the same hotspot credentials and waits for another submission. On success, reconnect your phone to home Wi-Fi and open the new URL shown on HDMI. The form remains visible while online, with read-only inputs and a disabled submit button. Refresh the page to see a changed state. A stale page cannot bypass the server-side restriction.
+Select **Refresh access points** for a new full scan. Because the board has one radio, refreshing briefly stops the setup hotspot, restores station mode for the scan, and then recreates the same hotspot. The phone must reconnect to `DigitalFrame-XXXX` after about 20–30 seconds. Named WPA2 access points are selectable; hidden, open, WEP, and WPA3-only BSSIDs are shown for completeness but disabled.
 
-**Offline means no periodic internet checks, Drive requests, or automatic home-Wi-Fi retries.** The waiting state survives app/helper/board restarts. The helper checks connectivity only while online (every 30 seconds, with short request deadlines) and after a user-submitted attempt. It also receives local device events. A separate cloud outage or authorization error does not cause a hotspot when independent internet checks succeed. Normal Drive sync resumes once after reconnection and then uses its usual interval. Local listener/helper supervision can still recover a crashed service; that is separate from internet reconnection.
+The single radio temporarily leaves hotspot mode during one bounded connection attempt. Association, DHCP, and internet verification can take up to one minute. On failure, it restores the same hotspot credentials and reports whether authentication, DHCP, or the internet check failed. On success, reconnect your phone to home Wi-Fi and open the new URL shown on HDMI. The form remains visible while online, with read-only inputs and a disabled submit button. Refresh the page to see a changed state. A stale page cannot bypass the server-side restriction.
 
-The helper chooses a private subnet avoiding known local routes and remembered upstream prefixes; it prefers `10.42.0.1/24` when available. That address is an example, not a guarantee. The displayed URL uses the actual AP/upstream interface and listener port. Phone-side routes cannot be exhaustively checked. AP forwarding is blocked while setup is active; the network provides local board access rather than a router service.
+**Offline means no Drive requests or automatic home-Wi-Fi retries.** The helper checks connectivity only while online (every 30 seconds, with short request deadlines) and after a user-submitted attempt. A fresh manual launch always honors a healthy Netplan connection, even if the prior run ended in setup mode. A separate cloud outage or authorization error does not cause a hotspot when independent internet checks succeed. Normal Drive sync resumes once after reconnection and then uses its usual interval.
 
-Install only on a dedicated Linux board whose adapter and driver support WPA2 AP mode and whose Wi-Fi is owned by NetworkManager. The helper uses OS `python3-dbus`, `python3-gi`, `curl`, `dnsmasq`, and `iptables`; it does not modify the frame's custom Pygame environment. The app itself remains unprivileged. The installer copies only helper code to root-owned `/opt/digitalframe-network`, creates a restricted socket service, and disables NetworkManager's separate periodic connectivity checker. The helper records adopted profiles' original autoconnect flags before disabling automatic station retries; it does not delete those profiles.
+The helper chooses a private subnet avoiding known local routes and remembered upstream prefixes; it prefers `10.42.0.1/24` when available. That address is an example, not a guarantee. The displayed URL uses the actual AP/upstream interface and listener port. Phone-side routes cannot be exhaustively checked. The minimal image keeps IPv4 forwarding disabled; the hotspot provides local board access rather than a router service.
 
-For normal manual use while hotspot work is paused, keep this value in `.env`:
+Install only on a dedicated Linux board whose adapter and driver support WPA2 AP mode and whose Wi-Fi is owned by Netplan/systemd-networkd. The helper uses the OS `wpa_supplicant`, `networkctl`, `iw`, `ip`, and `curl`, and talks to wpa_supplicant through its Unix control socket; it does not install another DHCP daemon or modify the frame's Pygame environment. The app remains unprivileged. The installer copies only helper code to root-owned `/opt/digitalframe-network`, writes one static systemd unit and its adapter configuration, and calls `daemon-reload`. It does not edit Netplan, enable or start a service, change firewall/sysctl settings, or install a boot target link.
 
-```dotenv
-WIFI_SETUP_ENABLED=false
-```
-
-For future development only, the staging command below installs the helper files. It does not start or enable services, install a slideshow service, or change getty/console settings. It still writes the helper configuration and NetworkManager connectivity-check configuration described above, so do not run it as part of ordinary slideshow setup:
+Stage the helper once:
 
 ```bash
 sudo /usr/bin/python3 deploy/install-network-helper.py \
   --user chang --interface wlan0 --mac ac:6a:a3:29:b9:61
 ```
 
-Replace these identifiers with the target board's verified values. The previous `--project` and `--start` options are rejected. Existing service enablement is untouched by staging. Further live tests require an independently verified local terminal and recovery path; a timer controlled by the same stalled service manager did not provide reliable recovery on this board. Preserve its custom Python/Pygame environment and SDL device configuration.
+Replace these identifiers with the target board's verified values. The previous `--project` and `--start` options are rejected. Staging refuses to replace an already enabled helper. Preserve the board's custom Python/Pygame environment and SDL device configuration.
+
+Then launch from the local terminal. This starts the static helper, runs the cache-only slideshow through the already-synchronized uv environment, and stops the helper in a shell trap when the app exits. The launcher supplies safe defaults for `CACHE_FOLDER`, `DISPLAY_SECONDS`, and `IDLE_SECONDS`, so it also works before a `.env` file exists:
+
+```bash
+./deploy/run-minimal-with-wifi.sh
+```
+
+After cloud credentials and the remaining `.env` settings are present, pass `run` to enable synchronization as well: `./deploy/run-minimal-with-wifi.sh run`.
+
+Do not launch the unit separately for normal use. If a test needs to be abandoned from the attached keyboard, press Ctrl+C and then run `sudo systemctl stop digitalframe-network.service`. A reboot is also a fallback because the override is only in `/run` and the unit has no install/boot section.
 
 Service status and logs:
 
@@ -237,7 +243,7 @@ systemctl status digitalframe digitalframe-network
 journalctl -u digitalframe -u digitalframe-network
 ```
 
-The existing `deploy/remove-network-helper.py` explicitly disables installed services and restores recorded network settings when systemd and NetworkManager work. It is a recovery operation, not a routine launch step. For a stalled console/service manager or an unplugged board, use the alternatives in [board recovery](docs/board-recovery.md).
+`deploy/remove-network-helper.py` stops a manually running helper and lets it restore the Netplan-owned connection. It does not disable or edit boot settings because this unit cannot be enabled. For recovery from the older NetworkManager deployment, use [board recovery](docs/board-recovery.md).
 
 ### Maintenance and deployment
 

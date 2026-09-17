@@ -7,6 +7,9 @@ from unittest.mock import Mock
 import pytest
 
 
+_ORIGINAL_SOCKET_CONNECT = socket.socket.connect
+
+
 @pytest.fixture(autouse=True)
 def isolated_environment(tmp_path, monkeypatch):
     settings = {
@@ -34,6 +37,12 @@ def isolated_environment(tmp_path, monkeypatch):
         pytest.fail("Tests must mock cloud access; a network connection was attempted")
 
     monkeypatch.setattr(socket.socket, "connect", reject_network)
+
+
+@pytest.fixture
+def allow_local_socket(monkeypatch):
+    """Permit Unix-domain IPC tests while cloud/network access stays blocked elsewhere."""
+    monkeypatch.setattr(socket.socket, "connect", _ORIGINAL_SOCKET_CONNECT)
 
 
 @pytest.fixture

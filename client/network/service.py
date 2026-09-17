@@ -11,10 +11,10 @@ import signal
 import socket
 import socketserver
 import struct
-from threading import BoundedSemaphore, Thread
+from threading import BoundedSemaphore, Event, Thread
 
 from .controller import NetworkController, StateFile
-from .network_manager import NetworkManager, NM, DEVICE, PROPS
+from .networkd import Networkd
 from .state import NetworkError
 
 
@@ -42,8 +42,19 @@ class Handler(socketserver.StreamRequestHandler):
                     self.wfile.flush()
                     revision = snapshot.revision
                 return
-            if operation == "reserve":
-                identity = controller.reserve(request.get("ssid"), request.get("password"))
+            if operation == "connect":
+                identity = controller.reserve(request.get("ssid"), request.get("bssid"), request.get("password"))
+                controller.commit(identity)
+                result = {"ok": True}
+            elif operation == "reserve":
+                identity = controller.reserve(request.get("ssid"), request.get("bssid"), request.get("password"))
+                result = {"ok": True, "operation": identity}
+            elif operation == "refresh":
+                identity = controller.reserve_refresh()
+                controller.commit(identity)
+                result = {"ok": True}
+            elif operation == "reserve_refresh":
+                identity = controller.reserve_refresh()
                 result = {"ok": True, "operation": identity}
             elif operation == "commit" and isinstance(request.get("operation"), str):
                 controller.commit(request["operation"])
@@ -93,10 +104,6 @@ class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
 
 
 def main():
-    import dbus
-    from dbus.mainloop.glib import DBusGMainLoop
-    from gi.repository import GLib
-
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     if os.geteuid() != 0:
@@ -107,20 +114,8 @@ def main():
         raise SystemExit("Invalid board interface configuration.")
     user = pwd.getpwnam(config["user"])
     os.umask(0o077)
-    DBusGMainLoop(set_as_default=True)
-    controller = NetworkController(NetworkManager(interface, mac), StateFile("/var/lib/digitalframe-network/state.json"))
-    bus = dbus.SystemBus(private=True)
-    # Listen only to link/address lifecycle events, not Wi-Fi scan or signal-strength chatter.
-    bus.add_signal_receiver(lambda *args: controller.event(), signal_name="StateChanged", dbus_interface=DEVICE)
-    def properties(interface_name, values, invalidated):
-        if interface_name == NM and {"PrimaryConnection", "ActiveConnections"}.intersection(values):
-            controller.event()
-        elif interface_name == DEVICE and {"Ip4Config", "Interface"}.intersection(values):
-            controller.event()
-    bus.add_signal_receiver(properties, signal_name="PropertiesChanged", dbus_interface=PROPS, bus_name=NM)
-    bus.add_signal_receiver(lambda name, old, new: controller.event(recover=bool(new)), signal_name="NameOwnerChanged",
-                            dbus_interface="org.freedesktop.DBus", arg0=NM)
-    bus.add_signal_receiver(lambda *args: controller.event(recover=True), signal_name="DeviceAdded", dbus_interface=NM)
+    backend = Networkd(interface, mac)
+    controller = NetworkController(backend, StateFile("/var/lib/digitalframe-network/state.json"))
     directory = Path("/run/digitalframe-network")
     directory.mkdir(mode=0o750, exist_ok=True)
     os.chown(directory, 0, user.pw_gid)
@@ -131,30 +126,36 @@ def main():
     server.allowed_uid, server.controller = user.pw_uid, controller
     os.chown(path, 0, user.pw_gid)
     os.chmod(path, 0o660)
+    stopped = Event()
+    failed = []
     def run_controller():
         try:
             controller.run()
         except BaseException:
-            # Let systemd recover a dead worker without logging secret-bearing
-            # driver exceptions or leaving a healthy-looking but inert helper.
-            os._exit(1)
+            # Do not log a potentially credential-bearing driver exception.
+            # Wake the main thread so it restores Netplan before systemd retries.
+            failed.append(True)
+            stopped.set()
     worker = Thread(target=run_controller, name="network-operations", daemon=True)
     worker.start()
     serving = Thread(target=server.serve_forever, name="network-socket", daemon=True)
     serving.start()
-    loop = GLib.MainLoop()
     def stop(*args):
         controller.stop()
-        loop.quit()
+        stopped.set()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     try:
-        loop.run()
+        stopped.wait()
     finally:
         controller.stop()
         server.shutdown()
         server.server_close()
+        worker.join(timeout=5)
+        backend.restore()
         path.unlink(missing_ok=True)
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
