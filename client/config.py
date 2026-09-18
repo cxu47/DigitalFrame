@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from .settings import parse_display_seconds
+from .settings import parse_display_seconds, parse_selected_months
 
 CLIENT_DIR = Path(__file__).resolve().parent
 ENV_FILE = CLIENT_DIR.parent / ".env"
@@ -58,6 +58,17 @@ def __getattr__(name):
             raise ValueError("DISPLAY_SECONDS must be a positive integer.") from None
     if name == "SELECTED_FOLDER":
         return os.getenv(name, "") or None
+    if name == "SELECTED_MONTHS":
+        try:
+            return parse_selected_months(os.getenv(name, ""))
+        except ValueError:
+            raise ValueError(
+                "SELECTED_MONTHS must be comma-separated YYYY-MM values.") from None
+    if name == "VIEW_MODE":
+        value = os.getenv(name, "folder").strip().lower()
+        if value not in {"folder", "months"}:
+            raise ValueError("VIEW_MODE must be folder or months.")
+        return value
     if name in {"CACHE_MAX_WIDTH", "CACHE_MAX_HEIGHT"}:
         return bounded_integer_from_env(name, "1600" if name.endswith("WIDTH") else "900", 1, 16384)
     if name in {"OTHER_IMAGE_QUALITY", "IPHONE_JPEG_QUALITY"}:

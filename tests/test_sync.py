@@ -52,9 +52,14 @@ def test_upload_dates_order_downloads_and_survive_offline_without_redownloading(
     queue = SimpleQueue()
     assert app.sync.sync_photos(queue).success
     assert [call.args[0] for call in download.call_args_list] == ["new", "middle", "old"]
-    assert [queue.get_nowait().stem for _ in range(3)] == ["new", "middle", "old"]
+    arrivals = [queue.get_nowait() for _ in range(3)]
+    assert [arrival.path.stem for arrival in arrivals] == ["new", "middle", "old"]
+    assert [arrival.month for arrival in arrivals] == ["2026-09", "2025-01", "2024-01"]
     manifest = json.loads((app.cache / app.sync.MANIFEST).read_text())
+    assert manifest["schema"] == 6
     assert manifest["photos"]["old"]["created"] == old["createdTime"]
+    assert manifest["photos"]["old"]["month"] == "2024-01"
+    assert manifest["photos"]["new"]["month"] == "2026-09"
     assert manifest["folder_metadata"]["summer"]["modified"] == remote[1]["modifiedTime"]
     old["modifiedTime"] = "2026-09-14T00:00:00Z"
     assert app.sync.sync_photos().success
@@ -64,6 +69,7 @@ def test_upload_dates_order_downloads_and_survive_offline_without_redownloading(
     # A new process can still order and label photos from the saved metadata.
     index = CacheIndex(app.cache)
     assert [p.stem for p in index.photos()] == ["new", "middle", "old"]
+    assert index.months() == ["2026-09", "2025-01", "2024-01"]
     assert index.folder_details()["kids"].updated.date().isoformat() == "2026-09-14"
 
 
@@ -78,8 +84,8 @@ def test_sync_mirrors_albums_empty_folders_and_reuses_one_service(app, monkeypat
     listing.assert_called_once_with("test-folder", service=service, stop_event=None)
     assert all(call.kwargs['service'] is service for call in download.call_args_list)
     service.close.assert_called_once()
-    assert queue.get_nowait() == app.cache / "kids/family.jpg"
-    assert queue.get_nowait() == app.cache / "summer/family.jpg"
+    assert queue.get_nowait().path == app.cache / "kids/family.jpg"
+    assert queue.get_nowait().path == app.cache / "summer/family.jpg"
     assert app.sync.sync_photos(queue).success
     assert download.call_count == 2
     assert queue.empty()
@@ -100,7 +106,9 @@ def test_iphone_photo_is_converted_once_to_same_stem_jpeg_and_never_cached_as_he
 
     assert app.sync.sync_photos(queue).success
     destination = app.cache / "kids/portrait.jpg"
-    assert queue.get_nowait() == destination
+    arrival = queue.get_nowait()
+    assert arrival.path == destination
+    assert arrival.month is None
     assert destination.exists()
     assert not list(app.cache.rglob("*.heic")) and not list(app.cache.rglob("*.HEIC"))
     with Image.open(destination) as converted:
@@ -119,7 +127,9 @@ def test_iphone_photo_is_converted_once_to_same_stem_jpeg_and_never_cached_as_he
     remote[0]["photos"][0]["name"] = "renamed.heic"
     assert app.sync.sync_photos(queue).success
     assert download.call_count == 1
-    assert queue.get_nowait() == app.cache / "kids/renamed.jpg"
+    arrival = queue.get_nowait()
+    assert arrival.path == app.cache / "kids/renamed.jpg"
+    assert arrival.month is None
     assert not destination.exists()
 
 
@@ -308,7 +318,9 @@ def test_failed_update_keeps_old_bytes_and_never_publishes_bad_download(app, mon
     assert queue.empty()
     download.side_effect = lambda file_id, path, **kwargs: path.write_bytes(b'edited')
     assert app.sync.sync_photos(queue).success
-    assert queue.get_nowait() == app.cache / 'kids/one.jpg'
+    arrival = queue.get_nowait()
+    assert arrival.path == app.cache / 'kids/one.jpg'
+    assert arrival.month is None
     assert cached(app) == {'kids/one.jpg': b'edited'}
 
 
@@ -325,9 +337,13 @@ def test_partial_failure_retries_and_each_photo_is_queued_immediately(app, monke
         path.write_bytes(file_id.encode())
     download.side_effect = transfer
     assert not app.sync.sync_photos(queue).success
-    assert queue.get_nowait() == app.cache / 'kids/two.jpg'
+    arrival = queue.get_nowait()
+    assert arrival.path == app.cache / 'kids/two.jpg'
+    assert arrival.month is None
     assert app.sync.sync_photos(queue).success
-    assert queue.get_nowait() == app.cache / 'kids/one.jpg'
+    arrival = queue.get_nowait()
+    assert arrival.path == app.cache / 'kids/one.jpg'
+    assert arrival.month is None
     assert attempts == ['one', 'two', 'one']
     assert not list(app.cache.glob('.sync-*'))
 

@@ -19,16 +19,17 @@ logger = logging.getLogger(__name__)
 def _restart_process(command):
     """Replace this process after its display and worker cleanup has finished."""
     logger.info("Restarting DigitalFrame after software update")
-    # python-dotenv does not override inherited variables. Remove the two
+    # python-dotenv does not override inherited variables. Remove the
     # panel-managed values so the replacement reads their new .env contents.
-    os.environ.pop("DISPLAY_SECONDS", None)
-    os.environ.pop("SELECTED_FOLDER", None)
+    for name in ("DISPLAY_SECONDS", "SELECTED_FOLDER", "SELECTED_MONTHS", "VIEW_MODE"):
+        os.environ.pop(name, None)
     os.execv(sys.executable, [sys.executable, "-m", "client", command])
 
 
 def run_display(*, sync_interval=None):
     from .config import (CACHE_DIR, CONTROL_HOST, CONTROL_PORT, CONTROL_URL_DISPLAY_SECONDS,
-                         DISPLAY_SECONDS, ENV_FILE, SELECTED_FOLDER)
+                         DISPLAY_SECONDS, ENV_FILE, SELECTED_FOLDER, SELECTED_MONTHS,
+                         VIEW_MODE)
     from .slideshow import show_slideshow
     from .config import WIFI_SETUP_ENABLED, WIFI_SOCKET
 
@@ -36,8 +37,9 @@ def run_display(*, sync_interval=None):
     restart_requested = Event()
     index = CacheIndex(CACHE_DIR)
     settings = RuntimeSettings(
-        DISPLAY_SECONDS, folders=index.folders, selected_folder=SELECTED_FOLDER,
-        env_path=ENV_FILE)
+        DISPLAY_SECONDS, folders=index.folders, months=index.months,
+        selected_folder=SELECTED_FOLDER, selected_months=SELECTED_MONTHS,
+        view_mode=VIEW_MODE, env_path=ENV_FILE)
     network = None
     if WIFI_SETUP_ENABLED:
         if CONTROL_HOST != "0.0.0.0":

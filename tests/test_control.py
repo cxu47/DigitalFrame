@@ -114,6 +114,43 @@ def test_folder_form_includes_empty_albums_escapes_names_and_tracks_sync_changes
         assert RuntimeSettings(5, folders=lambda: folders).selected_folder is None
 
 
+def test_month_form_selects_multiple_buckets_and_overrides_folder_mode():
+    months = ["2026-09", "2026-08", "2025-12"]
+    settings = RuntimeSettings(
+        5, folders=lambda: ["kids", "summer"], months=lambda: months)
+    with TestClient(create_app(settings)) as browser:
+        page = browser.get("/").text
+        assert 'Photo folder <small aria-label="Active viewing mode">✓ Active</small>' in page
+        assert 'value="2026-09">09-2026' in page
+        assert 'value="2026-08">08-2026' in page
+
+        response = browser.post(
+            "/months",
+            data={"month": ["2026-09", "2025-12"]},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert settings.view_mode == "months"
+        assert settings.selected_months == ("2026-09", "2025-12")
+        page = browser.get("/").text
+        assert 'Photo months <small aria-label="Active viewing mode">✓ Active</small>' in page
+        assert 'value="2026-09" checked>09-2026' in page
+        assert 'value="2025-12" checked>12-2025' in page
+
+        assert browser.post("/months", data={}).status_code == 422
+        assert browser.post("/months", data={"month": "2024-01"}).status_code == 422
+        assert browser.post("/months", json={"month": ["2026-08"]}).status_code == 415
+        assert settings.view_mode == "months"
+
+        browser.post("/folder", data={"folder": "summer"})
+        assert settings.view_mode == "folder"
+        assert settings.selected_folder == "summer"
+        assert settings.selected_months == ("2026-09", "2025-12")
+        page = browser.get("/").text
+        assert 'Photo folder <small aria-label="Active viewing mode">✓ Active</small>' in page
+        assert 'value="2026-09" checked>09-2026' in page
+
+
 class FakeUpdater:
     def __init__(self):
         self.state = UpdateSnapshot()

@@ -47,6 +47,10 @@ def test_offline_order_and_details_use_drive_dates_and_only_cached_album_photos(
     assert [p.relative_to(tmp_path).as_posix() for p in cached_photos(tmp_path)] == expected
     index = CacheIndex(tmp_path)
     assert index.photos() == cached_photos(tmp_path)
+    assert index.months() == ["2026-09", "2025-01", "2024-01"]
+    assert index.month_counts() == {"2026-09": 1, "2025-01": 1, "2024-01": 1}
+    assert [p.name for p in index.photos(["2025-01", "2024-01"])] == ["b.png", "a.jpg"]
+    assert index.month_for(tmp_path / "summer/unknown.jpg") is None
     details = index.folder_details()
     assert details[None].count == 4
     assert details["kids"].count == details["summer"].count == 2
@@ -112,12 +116,43 @@ def test_slideshow_plays_newest_first_in_all_and_selected_folder_across_cycles(
     assert shown == expected
 
 
+def test_slideshow_combines_selected_months_across_folders(app, monkeypatch):
+    seed(app.cache)
+    index = CacheIndex(app.cache)
+    settings = RuntimeSettings(1, folders=index.folders, months=index.months)
+    settings.set_folder("kids")
+    settings.set_months(["2025-01", "2024-01"])
+    shown = []
+    clock = [0.0]
+    monkeypatch.setattr(app.slideshow.time, "monotonic", lambda: clock[0])
+
+    def display(player, path, prepared=None):
+        shown.append(path.relative_to(app.cache).as_posix())
+        if len(shown) >= 3:
+            player.running = False
+        return True
+
+    def wait(player, milliseconds):
+        clock[0] += milliseconds / 1000
+        assert clock[0] < 4
+
+    monkeypatch.setattr(app.slideshow, "display_photo", display)
+    app.FakeMPV.wait_hook = wait
+    app.slideshow.show_slideshow(settings, index=index)
+
+    assert shown == ["summer/b.png", "kids/a.jpg", "summer/b.png"]
+    assert settings.playback_selection() == (
+        "months", None, ("2025-01", "2024-01"))
+
+
 def test_dropdown_details_refresh_without_changing_folder_values(tmp_path):
     catalog = seed(tmp_path)
     index = CacheIndex(tmp_path)
-    settings = RuntimeSettings(5, folders=index.folders)
+    settings = RuntimeSettings(5, folders=index.folders, months=index.months)
     with TestClient(create_app(settings, index=index)) as browser:
         page = browser.get("/").text
+        assert 'value="2026-09">09-2026 — 1 picture</label>' in page
+        assert 'value="2025-01">01-2025 — 1 picture</label>' in page
         assert '<option value="" selected>All — 4 pictures — updated 2026-09-13</option>' in page
         assert '<option value="empty">empty — 0 pictures — updated 2026-08-01</option>' in page
         assert '<option value="All">All — 0 pictures — updated unknown</option>' in page

@@ -20,6 +20,8 @@ def isolated_environment(tmp_path, monkeypatch):
         "GOOGLE_TOKEN_FILE": "token.json",
         "GOOGLE_DRIVE_FOLDER_ID": "test-folder",
         "DISPLAY_SECONDS": "1",
+        "SELECTED_MONTHS": "",
+        "VIEW_MODE": "folder",
         "CONTROL_HOST": "0.0.0.0",
         "CONTROL_PORT": "8000",
         "CONTROL_URL_DISPLAY_SECONDS": "30",

@@ -16,9 +16,16 @@
     <button type="submit">Apply</button>
   </form>
   <form method="post" action="/folder">
-    <label for="folder">Photo folder</label>
+    <label for="folder">Photo folder $folder_mode_check</label>
     <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
     <button type="submit">Apply folder</button>
+  </form>
+  <form method="post" action="/months">
+    <fieldset aria-describedby="error">
+      <legend>Photo months $month_mode_check</legend>
+      $month_options
+    </fieldset>
+    <button type="submit">Apply months</button>
   </form>
   <h2>Software update</h2>
   <p>$update_status</p>
@@ -45,10 +52,11 @@
   <h2>Notes</h2>
   <p id="error" role="alert">$error</p>
   <section aria-label="Error history" aria-live="polite">$issues</section>
-  <p>Changes apply from the next photo. The selected duration and folder are saved for the next start.</p>
-  <p>Refresh this page after syncing to update folders, picture counts, and dates.</p>
+  <p>Changes apply from the next photo. The duration, folder, selected months, and active viewing mode are saved for the next start.</p>
+  <p>Applying a folder or a group of months makes that viewing mode active. Both controls remain available.</p>
+  <p>Refresh this page after syncing to update folders, months, picture counts, and dates.</p>
   <p>Counts show cached pictures. Updated dates use the latest Drive date for the folder or its pictures (UTC).</p>
-  <p>Photos play newest first by their creation date in Google Drive.</p>
+  <p>Photos play newest first by their creation date in Google Drive. Month buckets use that date in UTC.</p>
   <p>When offline, join the setup Wi-Fi shown on the slideshow and open its displayed address.
      Stay connected if your phone warns that this network has no internet.</p>
   <p>Wi-Fi setup makes one connection attempt per submission. If it fails, reconnect to the same setup network.

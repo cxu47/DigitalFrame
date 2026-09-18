@@ -162,11 +162,15 @@ def test_restart_process_uses_current_environment_without_reboot(monkeypatch):
     monkeypatch.setattr(runtime.sys, "executable", "/frame/.venv/bin/python")
     monkeypatch.setenv("DISPLAY_SECONDS", "5")
     monkeypatch.setenv("SELECTED_FOLDER", "old")
+    monkeypatch.setenv("SELECTED_MONTHS", "2026-09")
+    monkeypatch.setenv("VIEW_MODE", "months")
 
     runtime._restart_process("slideshow")
 
     assert "DISPLAY_SECONDS" not in runtime.os.environ
     assert "SELECTED_FOLDER" not in runtime.os.environ
+    assert "SELECTED_MONTHS" not in runtime.os.environ
+    assert "VIEW_MODE" not in runtime.os.environ
     execute.assert_called_once_with(
         "/frame/.venv/bin/python",
         ["/frame/.venv/bin/python", "-m", "client", "slideshow"],

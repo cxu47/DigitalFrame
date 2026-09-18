@@ -5,6 +5,7 @@ from importlib.resources import files
 from string import Template
 
 from fastapi.responses import HTMLResponse
+from ..cache import photo_month_label
 from ..network.state import DISABLED
 
 
@@ -24,8 +25,10 @@ def _folder_label(name, details):
 def render_page(current: int, *, submitted: str | None = None,
                 error: str = "", status_code: int = 200,
                 folders=(), selected_folder=None, issues=(), folder_details=None,
+                months=(), selected_months=(), month_counts=None, view_mode="folder",
                 wifi=DISABLED, wifi_token="", update=None, update_token="") -> HTMLResponse:
     folder_details = folder_details or {}
+    month_counts = month_counts or {}
     return HTMLResponse(
         _TEMPLATE.substitute(
             current=current,
@@ -65,6 +68,24 @@ def render_page(current: int, *, submitted: str | None = None,
                 f'{escape(_folder_label(label, folder_details.get(value or None)))}</option>'
                 for value, label in [("", "All"), *((folder, folder) for folder in folders)]
             ),
+            folder_mode_check=(
+                '<small aria-label="Active viewing mode">✓ Active</small>'
+                if view_mode == "folder" else ""
+            ),
+            month_mode_check=(
+                '<small aria-label="Active viewing mode">✓ Active</small>'
+                if view_mode == "months" else ""
+            ),
+            month_options="".join(
+                '<label>'
+                f'<input type="checkbox" name="month" value="{escape(month, quote=True)}"'
+                f'{" checked" if month in selected_months else ""}>'
+                f'{escape(photo_month_label(month))} — '
+                f'{month_counts.get(month, 0)} '
+                f'{"picture" if month_counts.get(month, 0) == 1 else "pictures"}'
+                '</label><br>'
+                for month in months
+            ) or "<p>No dated photo months are available yet.</p>",
         ),
         status_code=status_code,
         headers={"Cache-Control": "no-store"},

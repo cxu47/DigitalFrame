@@ -28,13 +28,16 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
     updater = updater or UpdateManager()
 
     def page(current, **kwargs):
-        folders, selected = settings.folder_snapshot()
+        folders, selected, months, selected_months, view_mode = settings.selection_snapshot()
         if status is not None:
             status.clear("Control requests")
         return render_page(current, folders=folders, selected_folder=selected,
+                           months=months, selected_months=selected_months,
+                           view_mode=view_mode,
                            wifi=network.snapshot() if network is not None else DISABLED, wifi_token=wifi_token,
                            update=updater.snapshot(), update_token=update_token,
                            folder_details=index.folder_details() if index is not None else {},
+                           month_counts=index.month_counts() if index is not None else {},
                            issues=status.panel_snapshot() if status is not None else (), **kwargs)
 
     def valid_wifi_request(request, token):
@@ -135,6 +138,26 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
             return page(settings.display_seconds, error=str(exc), status_code=500)
         return RedirectResponse("/", status_code=303)
 
+    @app.post("/months")
+    async def update_months(
+        request: Request,
+        month: Annotated[list[str] | None, Form()] = None,
+    ):
+        media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+        if media_type and media_type not in {
+            "application/x-www-form-urlencoded", "multipart/form-data",
+        }:
+            return page(settings.display_seconds,
+                        error="Submit the HTML form to change the photo months.",
+                        status_code=415)
+        try:
+            settings.set_months(month or ())
+        except ValueError as exc:
+            return page(settings.display_seconds, error=str(exc), status_code=422)
+        except SettingsPersistenceError as exc:
+            return page(settings.display_seconds, error=str(exc), status_code=500)
+        return RedirectResponse("/", status_code=303)
+
     @app.post("/settings")
     async def update_settings(
         request: Request,
@@ -163,6 +186,8 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
             return page(settings.display_seconds, error="Enter the SSID and password using the Wi-Fi form.", status_code=422)
         if request.url.path == "/folder":
             return page(settings.display_seconds, error="Choose an existing folder or All.", status_code=422)
+        if request.url.path == "/months":
+            return page(settings.display_seconds, error="Choose one or more available months.", status_code=422)
         if request.url.path.startswith("/update"):
             return page(settings.display_seconds, error="Refresh this page before requesting an update.", status_code=422)
         return page(settings.display_seconds, submitted="", error=INTEGER_ERROR, status_code=422)

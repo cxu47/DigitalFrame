@@ -18,7 +18,8 @@ from .config import (CACHE_DIR, CACHE_MAX_HEIGHT, CACHE_MAX_WIDTH,
                      GOOGLE_DRIVE_FOLDER_ID, IPHONE_JPEG_QUALITY, OTHER_IMAGE_QUALITY)
 from .logging_config import configure_logging
 from .storage.google_drive import get_drive_service, list_albums, download_photo
-from .cache import MANIFEST, cached_folders, cached_photos, iphone_photo, newest_first, supported_photo
+from .cache import (MANIFEST, PhotoArrival, cached_folders, cached_photos,
+                    iphone_photo, newest_first, photo_month, supported_photo)
 from .cancellation import Cancelled, check_cancelled
 from .status import is_network_error
 
@@ -98,6 +99,7 @@ def _catalog(albums):
                 "size": int(photo["size"]) if "size" in photo else None,
                 "modified": photo.get("modifiedTime"),
                 "created": photo.get("createdTime"),
+                "month": photo_month(photo.get("createdTime")),
             }
     folder_metadata = {folders[album["id"]]: {
         "created": album.get("createdTime"), "modified": album.get("modifiedTime")
@@ -321,7 +323,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                     published = publication
                 published.replace(destination)
                 if new_photos is not None:
-                    new_photos.put(destination)
+                    new_photos.put(PhotoArrival(destination, entry.get("month")))
             except Cancelled:
                 raise
             except Exception as exc:
@@ -348,7 +350,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                     (CACHE_DIR / folder).rmdir()
                 except OSError:
                     pass  # Unrelated non-photo files are not removed.
-        manifest = {"schema": 5, **catalog,
+        manifest = {"schema": 6, **catalog,
                     "hash": hashlib.sha256(json.dumps(catalog, sort_keys=True).encode()).hexdigest()}
         encoded = json.dumps(manifest, sort_keys=True)
         try:

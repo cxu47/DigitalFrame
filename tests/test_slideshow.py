@@ -1,10 +1,13 @@
 """Exercise slideshow policy against an in-memory mpv test double."""
 
+import json
 from queue import SimpleQueue
 from threading import Event
 
 from PIL import Image
 import pytest
+
+from client.cache import CacheIndex, MANIFEST, PhotoArrival
 
 
 def make_photo(path, color="red", size=(20, 10), *, image_format=None):
@@ -257,6 +260,37 @@ def test_sync_arrivals_play_fifo_then_rotation_resumes(app, monkeypatch):
     app.slideshow.show_slideshow(RuntimeSettings(1), new_photos=queue)
 
     assert shown == ["a.jpg", "z.jpg", "aa.jpg", "b.jpg", "c.jpg"]
+
+
+def test_selected_month_arrival_plays_before_manifest_is_published(app, monkeypatch):
+    from client.settings import RuntimeSettings
+
+    for name in ("old.jpg", "other.jpg", "new.jpg"):
+        make_photo(app.cache / "kids" / name)
+    (app.cache / MANIFEST).write_text(json.dumps({
+        "photos": {
+            "old": {"path": "kids/old.jpg", "created": "2026-09-01T00:00:00Z",
+                    "month": "2026-09"},
+        },
+    }))
+    index = CacheIndex(app.cache)
+    settings = RuntimeSettings(1, folders=index.folders, months=index.months)
+    settings.set_months(["2026-09"])
+    queue = SimpleQueue()
+    queue.put(PhotoArrival(app.cache / "kids/other.jpg", "2026-08"))
+    queue.put(PhotoArrival(app.cache / "kids/new.jpg", "2026-09"))
+    shown = []
+    clock = clocked(app, monkeypatch, lambda player, now: len(shown) >= 2)
+
+    def display(player, path, prepared=None):
+        shown.append((path.name, clock[0]))
+        return True
+
+    monkeypatch.setattr(app.slideshow, "display_photo", display)
+    app.slideshow.show_slideshow(
+        settings, index=index, new_photos=queue)
+
+    assert [name for name, _ in shown] == ["new.jpg", "old.jpg"]
 
 
 def test_folder_change_applies_only_at_photo_boundary(app, monkeypatch):

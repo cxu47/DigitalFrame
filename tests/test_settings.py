@@ -58,22 +58,35 @@ def test_snapshot_records_each_accepted_submission_only():
     assert settings.notification_snapshot() == ("Seconds per photo: 10", 2)
 
 
-def test_duration_and_folder_persist_across_runtime_instances(tmp_path):
+def test_duration_folder_months_and_mode_persist_across_runtime_instances(tmp_path):
     state = tmp_path / ".env"
-    state.write_text("DISPLAY_SECONDS=5\nSELECTED_FOLDER=\nKEEP_ME=unchanged\n")
+    state.write_text(
+        "DISPLAY_SECONDS=5\nSELECTED_FOLDER=\nSELECTED_MONTHS=\n"
+        "VIEW_MODE=folder\nKEEP_ME=unchanged\n")
     folders = lambda: ["kids", "summer"]
-    settings = RuntimeSettings(5, folders=folders, env_path=state)
+    months = lambda: ["2026-09", "2026-08", "2025-12"]
+    settings = RuntimeSettings(5, folders=folders, months=months, env_path=state)
 
     settings.set_display_seconds(12)
     settings.set_folder("summer")
+    settings.set_months(["2025-12", "2026-09"])
 
     saved = dotenv_values(state)
     restored = RuntimeSettings(
-        int(saved["DISPLAY_SECONDS"]), folders=folders,
-        selected_folder=saved["SELECTED_FOLDER"], env_path=state)
+        int(saved["DISPLAY_SECONDS"]), folders=folders, months=months,
+        selected_folder=saved["SELECTED_FOLDER"],
+        selected_months=saved["SELECTED_MONTHS"], view_mode=saved["VIEW_MODE"],
+        env_path=state)
     assert restored.display_seconds == 12
     assert restored.selected_folder == "summer"
+    assert restored.selected_months == ("2026-09", "2025-12")
+    assert restored.playback_selection() == (
+        "months", None, ("2026-09", "2025-12"))
     assert saved["KEEP_ME"] == "unchanged"
+
+    restored.set_folder("summer")
+    assert restored.playback_selection() == ("folder", "summer", ())
+    assert restored.selected_months == ("2026-09", "2025-12")
 
 
 def test_missing_saved_folder_falls_back_to_all_and_updates_env(tmp_path):
@@ -89,7 +102,9 @@ def test_missing_saved_folder_falls_back_to_all_and_updates_env(tmp_path):
 
 
 def test_failed_env_write_does_not_apply_setting(monkeypatch, tmp_path):
-    settings = RuntimeSettings(5, folders=lambda: ["kids"], env_path=tmp_path / ".env")
+    settings = RuntimeSettings(
+        5, folders=lambda: ["kids"], months=lambda: ["2026-09"],
+        env_path=tmp_path / ".env")
     monkeypatch.setattr("client.settings.set_key", lambda *args, **kwargs: (_ for _ in ()).throw(
         OSError("read only")))
 
@@ -97,9 +112,12 @@ def test_failed_env_write_does_not_apply_setting(monkeypatch, tmp_path):
         settings.set_display_seconds(12)
     with pytest.raises(SettingsPersistenceError, match=".env is writable"):
         settings.set_folder("kids")
+    with pytest.raises(SettingsPersistenceError, match=".env is writable"):
+        settings.set_months(["2026-09"])
 
     assert settings.display_seconds == 5
     assert settings.selected_folder is None
+    assert settings.selected_months == ()
 
 
 @pytest.mark.parametrize("name,value,valid", [
@@ -117,6 +135,10 @@ def test_failed_env_write_does_not_apply_setting(monkeypatch, tmp_path):
     ("CONTROL_URL_DISPLAY_SECONDS", "abc", False),
     ("CONTROL_URL_DISPLAY_SECONDS", "", False),
     ("CONTROL_URL_DISPLAY_SECONDS", None, True),
+    ("VIEW_MODE", "folder", True), ("VIEW_MODE", "months", True),
+    ("VIEW_MODE", "albums", False),
+    ("SELECTED_MONTHS", "2026-09,2025-12", True),
+    ("SELECTED_MONTHS", "09-2026", False),
     ("CACHE_MAX_WIDTH", "1600", True), ("CACHE_MAX_WIDTH", "0", False),
     ("CACHE_MAX_WIDTH", "1600.5", False),
     ("CACHE_MAX_HEIGHT", "900", True), ("CACHE_MAX_HEIGHT", "16385", False),
@@ -133,6 +155,8 @@ def test_configuration_in_fresh_interpreter(name, value, valid):
         [sys.executable, "-c", "from client import config; assert isinstance(config.DISPLAY_SECONDS, int); "
          "assert isinstance(config.IDLE_SECONDS, float); assert isinstance(config.SYNC_INTERVAL, float); "
          "assert isinstance(config.CONTROL_URL_DISPLAY_SECONDS, int); "
+         "assert config.VIEW_MODE in {'folder', 'months'}; "
+         "assert isinstance(config.SELECTED_MONTHS, tuple); "
          "assert isinstance(config.CONTROL_PORT, int); assert config.CONTROL_HOST; "
          "assert isinstance(config.CACHE_MAX_WIDTH, int); "
          "assert isinstance(config.CACHE_MAX_HEIGHT, int); "

@@ -28,6 +28,24 @@ def newest_first(value):
     return -created.timestamp() if created is not None else float("inf")
 
 
+def photo_month(value):
+    """Return a stable UTC YYYY-MM bucket for a Drive creation timestamp."""
+    created = drive_time(value)
+    return created.strftime("%Y-%m") if created is not None else None
+
+
+def valid_photo_month(value):
+    return (isinstance(value, str) and len(value) == 7 and value[4] == "-"
+            and value[:4].isdigit() and value[5:].isdigit()
+            and 1 <= int(value[5:]) <= 12)
+
+
+def photo_month_label(value):
+    if not valid_photo_month(value):
+        raise ValueError("Invalid photo month")
+    return f"{value[5:]}-{value[:4]}"
+
+
 def _read_catalog(cache):
     try:
         catalog = json.loads((cache / MANIFEST).read_text(encoding="utf-8"))
@@ -50,6 +68,12 @@ def _photo_metadata(catalog):
 class FolderDetails:
     count: int
     updated: datetime | None
+
+
+@dataclass(frozen=True)
+class PhotoArrival:
+    path: Path
+    month: str | None
 
 
 def _latest(entry):
@@ -92,6 +116,9 @@ class CacheIndex:
         self._next_refresh = 0
         self._folders = []
         self._photos = []
+        self._months = []
+        self._photo_months = {}
+        self._month_counts = {}
         self._details = {}
 
     def refresh(self, force=False):
@@ -104,6 +131,7 @@ class CacheIndex:
                 folder_metadata = _entries(catalog, "folder_metadata")
                 counts = dict.fromkeys(folders, 0)
                 dates = {folder: [] for folder in folders}
+                photo_months = {}
                 for folder in folders:
                     entry = folder_metadata.get(folder, {})
                     if isinstance(entry, dict) and (date := _latest(entry)) is not None:
@@ -112,6 +140,11 @@ class CacheIndex:
                     folder = photo.parent.name
                     counts[folder] += 1
                     entry = metadata.get(photo.relative_to(self.cache).as_posix(), {})
+                    month = entry.get("month")
+                    if not valid_photo_month(month):
+                        month = photo_month(entry.get("created"))
+                    if month is not None:
+                        photo_months[photo] = month
                     if (date := _latest(entry)) is not None:
                         dates[folder].append(date)
                 self._details = {folder: FolderDetails(counts[folder], max(dates[folder], default=None))
@@ -119,6 +152,12 @@ class CacheIndex:
                 self._details[None] = FolderDetails(len(photos), max(
                     (date for values in dates.values() for date in values), default=None))
                 self._folders, self._photos = folders, photos
+                self._photo_months = photo_months
+                self._months = sorted(set(photo_months.values()), reverse=True)
+                self._month_counts = {
+                    month: sum(value == month for value in photo_months.values())
+                    for month in self._months
+                }
                 self._next_refresh = time.monotonic() + self.interval
 
     def folders(self):
@@ -126,10 +165,29 @@ class CacheIndex:
         with self._lock:
             return list(self._folders)
 
-    def photos(self):
+    def photos(self, months=None):
         self.refresh()
         with self._lock:
-            return list(self._photos)
+            if months is None:
+                return list(self._photos)
+            selected = set(months)
+            return [photo for photo in self._photos
+                    if self._photo_months.get(photo) in selected]
+
+    def months(self):
+        self.refresh()
+        with self._lock:
+            return list(self._months)
+
+    def month_counts(self):
+        self.refresh()
+        with self._lock:
+            return dict(self._month_counts)
+
+    def month_for(self, photo):
+        self.refresh()
+        with self._lock:
+            return self._photo_months.get(photo)
 
     def folder_details(self):
         self.refresh()

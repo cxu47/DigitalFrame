@@ -10,7 +10,7 @@ from queue import Empty
 from tempfile import NamedTemporaryFile
 from threading import Event, Lock, Thread
 
-from .cache import PLAYBACK_PHOTO_SUFFIXES, cached_folders, cached_photos
+from .cache import PhotoArrival, PLAYBACK_PHOTO_SUFFIXES, cached_folders, cached_photos
 from .config import CACHE_DIR, DISPLAY_SECONDS, IDLE_SECONDS
 from .overlay import SlideshowOverlay
 from .player import MPVError, MPVPlayer
@@ -154,12 +154,17 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
         def pause(milliseconds):
             overlay.wait(max(1, min(int(IDLE_SECONDS * 1000), milliseconds)))
 
-        def eligible(path, folder):
+        def eligible(path, selection, *, arrival_month=None):
             try:
+                mode, folder, months = selection
+                selected = ((mode == "folder" and
+                            (folder is None or path.parent.name == folder)) or
+                            (mode == "months" and index is not None and
+                             (arrival_month or index.month_for(path)) in months))
                 valid = (path.parent.parent == CACHE_DIR and path.is_file()
                          and not path.is_symlink() and not path.parent.is_symlink()
                          and path.suffix.lower() in PLAYBACK_PHOTO_SUFFIXES
-                         and (folder is None or path.parent.name == folder))
+                         and selected)
                 failed = bad_photos.get(path)
                 signature = (path.stat().st_size, path.stat().st_mtime_ns)
                 if failed and (failed[0] != signature or time.monotonic() >= failed[1]):
@@ -170,8 +175,9 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                 return False
 
         while running and check():
-            selected = settings.selected_folder
-            photos = index.photos() if index is not None else get_cached_photos()
+            selected = settings.playback_selection()
+            photos = (index.photos(selected[2] if selected[0] == "months" else None)
+                      if index is not None else get_cached_photos())
             bad_photos = {path: value for path, value in bad_photos.items() if path in photos}
             remaining = deque(path for path in photos if eligible(path, selected))
             seen = set()
@@ -184,11 +190,16 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                     return None
                 while True:
                     try:
-                        path = new_photos.get_nowait()
+                        arrival = new_photos.get_nowait()
                     except Empty:
                         return None
+                    if isinstance(arrival, PhotoArrival):
+                        path, arrival_month = arrival.path, arrival.month
+                    else:
+                        # Retain compatibility with callers that queue paths.
+                        path, arrival_month = arrival, None
                     if (path.suffix.lower() in PLAYBACK_PHOTO_SUFFIXES and path not in seen
-                            and eligible(path, selected)):
+                            and eligible(path, selected, arrival_month=arrival_month)):
                         seen.add(path)
                         priority_paths.add(path)
                         return path
@@ -207,7 +218,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
             path = next_photo()
             read_ahead = None
             while path is not None and running:
-                if settings.selected_folder != selected:
+                if settings.playback_selection() != selected:
                     break
                 urgent = queued() if path not in priority_paths else None
                 if urgent is not None:
@@ -223,7 +234,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                     # Keep the current frame visible while the sole look-ahead
                     # buffer finishes, without making controls feel sluggish.
                     pause(100)
-                if not running or settings.selected_folder != selected:
+                if not running or settings.playback_selection() != selected:
                     if read_ahead is not None:
                         read_ahead.release()
                         read_ahead = None
@@ -268,7 +279,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                 read_ahead.release()
             if not running:
                 break
-            if settings.selected_folder != selected:
+            if settings.playback_selection() != selected:
                 continue
             if successes == 0:
                 display_message(player, "No readable photos available. Waiting for photos.")
