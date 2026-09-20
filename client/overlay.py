@@ -11,6 +11,7 @@ class SlideshowOverlay:
         self._network_text = None
         self._notice = None
         self.deadline = None
+        self._rendered = None
         self._set_message(f"Control: {url}" if url else None, seconds)
 
     def _set_message(self, text: str | None, seconds: int):
@@ -21,12 +22,19 @@ class SlideshowOverlay:
         self.deadline = None
         if self._network_problem:
             text = self._network_text or "Network connection problem. Retrying..."
-            self.player.set_overlay(1, text, color="red")
+            rendered = (text, "red")
         elif self._notice is not None and time.monotonic() < self._notice[1]:
             text, self.deadline = self._notice
-            self.player.set_overlay(1, text, color="white")
+            rendered = (text, "white")
         else:
+            rendered = None
+        if rendered == self._rendered:
+            return
+        if rendered is None:
             self.player.clear_overlay(1)
+        else:
+            self.player.set_overlay(1, rendered[0], color=rendered[1])
+        self._rendered = rendered
 
     def show_message(self, text: str, seconds: int):
         self._notice = (text, time.monotonic() + seconds) if text and seconds else None
@@ -49,6 +57,8 @@ class SlideshowOverlay:
 
     def new_frame(self):
         # mpv overlays are independent of the underlying image and survive a load.
+        # _render_active is intentionally idempotent: a photo change must not
+        # submit unchanged text and make it visibly refresh.
         self._render_active()
 
     def update(self):

@@ -12,6 +12,8 @@ import subprocess
 from threading import Condition, Lock, Thread
 import time
 
+from .display import preferred_drm_options
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class MPVPlayer:
     """Own one fullscreen mpv process for the lifetime of the slideshow."""
 
     def __init__(self, executable="mpv", *, startup_timeout=30,
-                 command_timeout=5, load_timeout=30):
+                 command_timeout=5, load_timeout=30, drm_options=None):
         self.startup_timeout = startup_timeout
         self.command_timeout = command_timeout
         self.load_timeout = load_timeout
@@ -62,12 +64,23 @@ class MPVPlayer:
         self._file_loaded = False
         self._load_result = None
         self._closed = False
+        self._overlay_state = {}
+        self._display_state_logged = False
         self._stderr_lines = deque(maxlen=80)
         parent, child = socket.socketpair()
         try:
+            if drm_options is None:
+                from . import config
+                drm_options = preferred_drm_options(
+                    executable,
+                    preferred_hz=config.HDMI_PREFERRED_HZ,
+                    max_width=config.HDMI_MAX_WIDTH,
+                    max_height=config.HDMI_MAX_HEIGHT,
+                )
             command = [
                 executable,
                 "--no-config",
+                *drm_options,
                 "--idle=yes",
                 "--force-window=immediate",
                 "--fullscreen=yes",
@@ -224,11 +237,36 @@ class MPVPlayer:
             success, error = self._load_result
         if not success:
             raise MPVError(error)
+        self._log_display_state()
+
+    def _optional_property(self, name):
+        try:
+            return self._command(["get_property", name])
+        except MPVError:
+            return None
+
+    def _log_display_state(self):
+        if self._display_state_logged:
+            return
+        self._display_state_logged = True
+        output = self._optional_property("current-vo")
+        fps = self._optional_property("display-fps")
+        dimensions = self._optional_property("osd-dimensions") or {}
+        width, height = dimensions.get("w"), dimensions.get("h")
+        if output or fps or (width and height):
+            logger.info(
+                "Active display: output=%s, size=%sx%s, refresh=%s Hz",
+                output or "unknown", width or "unknown", height or "unknown",
+                f"{fps:.2f}" if isinstance(fps, (int, float)) else "unknown",
+            )
 
     def stop(self):
         self._command(["stop"])
 
     def set_overlay(self, overlay_id: int, text: str, *, color="white", position="top"):
+        state = (text, color, position)
+        if self._overlay_state.get(overlay_id) == state:
+            return
         color_tag = r"\1c&H0000FF&" if color == "red" else r"\1c&HFFFFFF&"
         if position == "center":
             layout = r"\an5\pos(640,360)\fs36\q2"
@@ -244,9 +282,10 @@ class MPVPlayer:
             "res_y": 720,
             "z": overlay_id,
         })
+        self._overlay_state[overlay_id] = state
 
     def clear_overlay(self, overlay_id: int):
-        if self.running:
+        if self.running and overlay_id in self._overlay_state:
             self._command({
                 "name": "osd-overlay",
                 "id": overlay_id,
@@ -259,6 +298,7 @@ class MPVPlayer:
                 "res_y": 720,
                 "z": overlay_id,
             })
+            self._overlay_state.pop(overlay_id, None)
 
     def wait(self, milliseconds: int):
         time.sleep(milliseconds / 1000)

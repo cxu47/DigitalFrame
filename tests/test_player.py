@@ -5,6 +5,9 @@ import time
 
 import pytest
 
+from client.display import (
+    DRMMode, choose_mode, parse_drm_modes, preferred_drm_options,
+)
 from client.player import MPVError, MPVPlayer, _ass_text, _background_commands
 
 
@@ -36,7 +39,13 @@ for line in reader:
     if isinstance(command, dict) and "_name" in command:
         connection.sendall((json.dumps({"request_id": request["request_id"], "error": "invalid parameter"}) + "\n").encode())
         continue
-    data = "mpv 0.37.0" if name == "get_property" else None
+    properties = {
+        "mpv-version": "mpv 0.37.0",
+        "current-vo": "gpu",
+        "display-fps": 30.0,
+        "osd-dimensions": {"w": 1920, "h": 1080},
+    }
+    data = properties.get(command[1]) if name == "get_property" else None
     connection.sendall((json.dumps({"request_id": request["request_id"], "error": "success", "data": data}) + "\n").encode())
     if name == "loadfile":
         entry += 1
@@ -90,6 +99,72 @@ def test_player_uses_fullscreen_low_overhead_ipc_and_waits_for_decode(
         "--image-display-duration=inf", "--audio=no",
     } <= set(arguments)
     assert not any(argument.startswith("--background") for argument in arguments)
+
+
+def test_player_applies_an_edid_selected_drm_mode(
+    fake_mpv, tmp_path, allow_local_socket, monkeypatch,
+):
+    arguments_file = tmp_path / "arguments.json"
+    monkeypatch.setenv("FAKE_MPV_ARGS", str(arguments_file))
+    try:
+        player = MPVPlayer(
+            str(fake_mpv), command_timeout=2, load_timeout=2,
+            drm_options=("--vo=gpu", "--gpu-context=drm", "--drm-mode=7"),
+        )
+    except MPVError as exc:
+        if isinstance(exc.__cause__, PermissionError):
+            pytest.skip("sandbox blocks inherited Unix socket IPC")
+        raise
+    player.close()
+
+    arguments = json.loads(arguments_file.read_text())
+    assert "--vo=gpu" in arguments
+    assert "--gpu-context=drm" in arguments
+    assert "--drm-mode=7" in arguments
+
+
+def test_drm_mode_parser_and_selector_prefer_largest_progressive_30hz_mode():
+    output = """
+    [vo/gpu/drm]   Mode 0: 3840x2160 (3840x2160@30.00Hz)
+    [vo/gpu/drm]   Mode 1: 1920x1080 (1920x1080@60.00Hz)
+    [vo/gpu/drm]   Mode 2: 1920x1080 (1920x1080@29.97Hz)
+    [vo/gpu/drm]   Mode 3: 1920x1080i (1920x1080@30.00Hz)
+    [vo/gpu/drm]   Mode 4: 1280x720 (1280x720@30.00Hz)
+    """
+    modes = parse_drm_modes(output)
+
+    assert modes[0] == DRMMode(0, "3840x2160", 3840, 2160, 30.0)
+    assert choose_mode(
+        modes, preferred_hz=30, max_width=1920, max_height=1080,
+    ) == modes[2]
+
+
+def test_drm_mode_selector_preserves_automatic_mode_without_a_30hz_match():
+    modes = parse_drm_modes(
+        "Mode 0: 1920x1080 (1920x1080@60.00Hz)\n"
+        "Mode 1: 1280x720 (1280x720@50.00Hz)\n"
+    )
+
+    assert choose_mode(
+        modes, preferred_hz=30, max_width=1920, max_height=1080,
+    ) is None
+
+
+def test_drm_probe_uses_the_connected_displays_exact_mode_index(monkeypatch):
+    output = """
+    [vo/gpu/drm] Available modes:
+    [vo/gpu/drm]   Mode 5: 1920x1080 (1920x1080@60.00Hz)
+    [vo/gpu/drm]   Mode 6: 1920x1080 (1920x1080@29.97Hz)
+    """
+    result = type("Result", (), {"stdout": output})()
+    monkeypatch.setattr("client.display._direct_drm_available", lambda: True)
+    monkeypatch.setattr("client.display.subprocess.run", lambda *args, **kwargs: result)
+
+    options = preferred_drm_options(
+        "mpv", preferred_hz=30, max_width=1920, max_height=1080,
+    )
+
+    assert options == ("--vo=gpu", "--gpu-context=drm", "--drm-mode=6")
 
 
 def test_ass_overlay_text_is_escaped():

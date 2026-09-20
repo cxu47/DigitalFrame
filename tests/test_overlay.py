@@ -25,6 +25,23 @@ def test_url_overlay_expires_without_touching_the_photo(app, clock):
     assert player.loaded == []
 
 
+def test_unchanged_overlay_is_not_resubmitted_on_each_photo(app, clock, monkeypatch):
+    player = app.FakeMPV()
+    writes = []
+    original = player.set_overlay
+
+    def record(*args, **kwargs):
+        writes.append((args, kwargs))
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(player, "set_overlay", record)
+    banner = overlay.SlideshowOverlay(player, "http://frame:8000", 30)
+    for _ in range(5):
+        banner.new_frame()
+
+    assert len(writes) == 1
+
+
 @pytest.mark.parametrize("url,seconds", [(None, 30), ("http://frame:8000", 0)])
 def test_disabled_or_missing_url_has_no_overlay(app, clock, url, seconds):
     player = app.FakeMPV()

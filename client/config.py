@@ -71,6 +71,10 @@ def __getattr__(name):
         return value
     if name in {"CACHE_MAX_WIDTH", "CACHE_MAX_HEIGHT"}:
         return bounded_integer_from_env(name, "1600" if name.endswith("WIDTH") else "900", 1, 16384)
+    if name in {"HDMI_MAX_WIDTH", "HDMI_MAX_HEIGHT"}:
+        return bounded_integer_from_env(name, "1920" if name.endswith("WIDTH") else "1080", 1, 16384)
+    if name == "HDMI_PREFERRED_HZ":
+        return bounded_integer_from_env(name, "30", 1, 240)
     if name in {"OTHER_IMAGE_QUALITY", "IPHONE_JPEG_QUALITY"}:
         return bounded_integer_from_env(
             name, "75" if name == "IPHONE_JPEG_QUALITY" else "85", 1, 95)
