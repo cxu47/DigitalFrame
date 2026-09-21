@@ -36,7 +36,8 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
         return ("zh" if language == "zh" else "en"), requested
 
     def page(current, *, request=None, **kwargs):
-        folders, selected, months, selected_months, view_mode = settings.selection_snapshot()
+        available = settings.reconcile_selection()
+        folders, selected, months, selected_months, view_mode = settings.selection_snapshot(available=available)
         if status is not None:
             status.clear("Control requests")
         language, requested = request_language(request)

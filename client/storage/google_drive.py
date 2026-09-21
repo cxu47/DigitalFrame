@@ -14,6 +14,7 @@ from ..config import (
     GOOGLE_SCOPES,
     GOOGLE_CREDENTIALS_FILE,
     GOOGLE_TOKEN_FILE,
+    MAX_SOURCE_MEGABYTES,
     NETWORK_TIMEOUT,
 )
 from ..cache import supported_photo
@@ -21,6 +22,7 @@ from ..cancellation import check_cancelled
 
 
 logger = logging.getLogger(__name__)
+MAX_SOURCE_BYTES = MAX_SOURCE_MEGABYTES * 1024 * 1024
 
 
 def get_drive_service():
@@ -104,5 +106,8 @@ def download_photo(file_id, destination, *, service=None, stop_event=None):
         while not done:
             check_cancelled(stop_event)
             _, done = downloader.next_chunk()
+            if file.tell() > MAX_SOURCE_BYTES:
+                raise ValueError(
+                    f"Source photo exceeds the {MAX_SOURCE_MEGABYTES} MiB safety limit.")
 
     logger.debug("Google Drive media download completed")

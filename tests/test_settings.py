@@ -97,8 +97,53 @@ def test_missing_saved_folder_falls_back_to_all_and_updates_env(tmp_path):
         7, folders=lambda: ["kids"], selected_folder="gone", env_path=state)
 
     assert restored.display_seconds == 7
+    assert restored.selected_folder == "gone"
+    assert dotenv_values(state)["SELECTED_FOLDER"] == "gone"
+    restored.reconcile_selection()
     assert restored.selected_folder is None
     assert dotenv_values(state)["SELECTED_FOLDER"] == ""
+
+
+def test_selection_fallback_and_all_snapshots_do_not_write_on_read(tmp_path):
+    state = tmp_path / ".env"
+    state.write_text("SELECTED_FOLDER=gone\nSELECTED_MONTHS=2025-01\nVIEW_MODE=months\n")
+    settings = RuntimeSettings(
+        5, folders=lambda: ["kids"], months=lambda: ["2026-09"],
+        selected_folder="gone", selected_months=("2025-01",),
+        view_mode="months", env_path=state,
+    )
+    before = state.read_bytes()
+    assert settings.playback_selection() == ("months", None, ("2025-01",))
+    assert settings.notification_snapshot() == ("Seconds per photo: 5", 0)
+    assert state.read_bytes() == before
+    settings.reconcile_selection()
+    saved = dotenv_values(state)
+    assert saved["SELECTED_FOLDER"] == ""
+    assert saved["SELECTED_MONTHS"] == ""
+    assert saved["VIEW_MODE"] == "folder"
+    assert settings.playback_selection() == ("folder", None, ())
+
+
+def test_selection_and_mode_are_atomic_if_second_env_write_fails(monkeypatch, tmp_path):
+    state = tmp_path / ".env"
+    state.write_text("SELECTED_FOLDER=\nVIEW_MODE=folder\nKEEP_ME=unchanged\n")
+    settings = RuntimeSettings(5, folders=lambda: ["kids"], env_path=state)
+    original = state.read_bytes()
+    from client import settings as module
+    actual_set_key = module.set_key
+    calls = []
+
+    def fail_second(path, key, value, **kwargs):
+        calls.append(key)
+        if len(calls) == 2:
+            raise OSError("second write failed")
+        return actual_set_key(path, key, value, **kwargs)
+
+    monkeypatch.setattr(module, "set_key", fail_second)
+    with pytest.raises(SettingsPersistenceError):
+        settings.set_folder("kids")
+    assert state.read_bytes() == original
+    assert settings.playback_selection() == ("folder", None, ())
 
 
 def test_failed_env_write_does_not_apply_setting(monkeypatch, tmp_path):

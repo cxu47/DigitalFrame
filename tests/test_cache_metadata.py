@@ -2,6 +2,7 @@
 
 import json
 import os
+from threading import Event, Thread
 
 from fastapi.testclient import TestClient
 import pytest
@@ -83,6 +84,33 @@ def test_equal_instants_have_stable_filename_order(tmp_path):
     catalog["photos"]["old"]["created"] = "2026-09-12T01:00:00+01:00"
     (tmp_path / MANIFEST).write_text(json.dumps(catalog))
     assert [p.name for p in cached_photos(tmp_path)][:2] == ["a.jpg", "z.jpg"]
+
+
+def test_readers_keep_previous_snapshot_during_slow_index_refresh(tmp_path, monkeypatch):
+    seed(tmp_path)
+    index = CacheIndex(tmp_path)
+    before = index.photos()
+    (tmp_path / "kids/new.jpg").touch()
+    entered, release = Event(), Event()
+    from client import cache as cache_module
+    original = cache_module.cached_photos
+
+    def slow_photos(*args, **kwargs):
+        entered.set()
+        assert release.wait(2)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cache_module, "cached_photos", slow_photos)
+    thread = Thread(target=index.refresh, kwargs={"force": True})
+    thread.start()
+    try:
+        assert entered.wait(2)
+        assert index.photos() == before
+    finally:
+        release.set()
+        thread.join(2)
+    assert not thread.is_alive()
+    assert tmp_path / "kids/new.jpg" in index.photos()
 
 
 @pytest.mark.parametrize("selection,expected", [

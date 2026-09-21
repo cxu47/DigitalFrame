@@ -46,18 +46,9 @@ class Handler(socketserver.StreamRequestHandler):
                 identity = controller.reserve(request.get("ssid"), request.get("bssid"), request.get("password"))
                 controller.commit(identity)
                 result = {"ok": True}
-            elif operation == "reserve":
-                identity = controller.reserve(request.get("ssid"), request.get("bssid"), request.get("password"))
-                result = {"ok": True, "operation": identity}
             elif operation == "refresh":
                 identity = controller.reserve_refresh()
                 controller.commit(identity)
-                result = {"ok": True}
-            elif operation == "reserve_refresh":
-                identity = controller.reserve_refresh()
-                result = {"ok": True, "operation": identity}
-            elif operation == "commit" and isinstance(request.get("operation"), str):
-                controller.commit(request["operation"])
                 result = {"ok": True}
             elif operation == "check":
                 if controller.snapshot.online:
@@ -109,12 +100,14 @@ def main():
     if os.geteuid() != 0:
         raise SystemExit("Install and start the system network helper as root.")
     config = json.loads(Path("/etc/digitalframe-network.json").read_text())
-    interface, mac = config["interface"], config["mac"]
+    interface, mac, country = config["interface"], config["mac"], config["country"]
     if not re.fullmatch(r"[a-zA-Z0-9_.-]{1,15}", interface) or not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", mac):
         raise SystemExit("Invalid board interface configuration.")
+    if not isinstance(country, str) or not re.fullmatch(r"[A-Za-z]{2}", country):
+        raise SystemExit("Invalid Wi-Fi regulatory country configuration.")
     user = pwd.getpwnam(config["user"])
     os.umask(0o077)
-    backend = Networkd(interface, mac)
+    backend = Networkd(interface, mac, country)
     controller = NetworkController(backend, StateFile("/var/lib/digitalframe-network/state.json"))
     directory = Path("/run/digitalframe-network")
     directory.mkdir(mode=0o750, exist_ok=True)

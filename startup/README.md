@@ -4,7 +4,7 @@ No file in this directory runs automatically from the repository. Review all
 five configuration files, then run the one installer explicitly on the frame:
 
 ```bash
-sudo /bin/bash /home/chang/DigitalFrame/startup/install-startup.sh
+sudo /bin/bash /home/chang/DigitalFrame/startup/install-startup.sh CN
 ```
 
 The installer stages files but does not start, stop, enable, disable, restart,
@@ -12,6 +12,9 @@ or reboot anything. Its preflight is intentionally specific to the inspected
 board: user `chang` (UID 1000), `/home/chang/DigitalFrame`, `wlan0`, permanent
 MAC `ac:6a:a3:29:b9:61`, `multi-user.target`, and the already-enabled tty1
 getty. A mismatch stops the install instead of guessing.
+Replace `CN` with the two-letter Wi-Fi regulatory country where the board is
+physically operated (`US` for a board in the United States); the same country
+is used by the setup hotspot and the later home-Wi-Fi connection.
 
 ## Boot and exit behavior
 

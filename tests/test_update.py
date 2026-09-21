@@ -132,3 +132,44 @@ def test_shell_scripts_fetch_then_fast_forward_and_sync(tmp_path):
     assert "reason=dirty" in blocked.stdout
     assert (checkout / "version.txt").read_text() == "two\n"
     assert (checkout / "local-note.txt").read_text() == "do not discard\n"
+
+
+def test_update_preflight_failure_does_not_change_live_checkout(tmp_path):
+    remote = tmp_path / "remote.git"
+    publisher = tmp_path / "publisher"
+    checkout = tmp_path / "frame"
+    remote.mkdir()
+    publisher.mkdir()
+    _git(remote, "init", "--bare")
+    _git(publisher, "init", "-b", "release/3.x")
+    _git(publisher, "config", "user.name", "DigitalFrame tests")
+    _git(publisher, "config", "user.email", "tests@example.invalid")
+    (publisher / "deploy").mkdir()
+    shutil.copy2(Path(__file__).resolve().parents[1] / "deploy/apply-update.sh",
+                 publisher / "deploy/apply-update.sh")
+    (publisher / "version.txt").write_text("one\n")
+    _git(publisher, "add", ".")
+    _git(publisher, "commit", "-m", "initial")
+    _git(publisher, "remote", "add", "origin", str(remote))
+    _git(publisher, "push", "-u", "origin", "release/3.x")
+    _git(tmp_path, "clone", "--branch", "release/3.x", str(remote), str(checkout))
+    previous = _git(checkout, "rev-parse", "HEAD")
+    (publisher / "version.txt").write_text("two\n")
+    _git(publisher, "add", "version.txt")
+    _git(publisher, "commit", "-m", "update")
+    _git(publisher, "push", "origin", "release/3.x")
+
+    uv = tmp_path / "fake-uv"
+    uv.write_text('#!/bin/sh\ncase "$*" in *--project*) exit 17;; esac\nprintf "called live" > "$UV_LOG"\n')
+    uv.chmod(0o755)
+    log = tmp_path / "uv.log"
+    response = subprocess.run(
+        [str(checkout / "deploy/apply-update.sh")], cwd=checkout,
+        env=os.environ | {"UV_BIN": str(uv), "UV_LOG": str(log)},
+        capture_output=True, text=True,
+    )
+    assert response.returncode == 1 and "reason=preflight" in response.stdout
+    assert _git(checkout, "rev-parse", "HEAD") == previous
+    assert (checkout / "version.txt").read_text() == "one\n"
+    assert _git(checkout, "worktree", "list", "--porcelain").count("worktree ") == 1
+    assert not log.exists()

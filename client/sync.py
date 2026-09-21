@@ -15,7 +15,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
 from .config import (CACHE_DIR, CACHE_MAX_HEIGHT, CACHE_MAX_WIDTH,
-                     IPHONE_JPEG_QUALITY, OTHER_IMAGE_QUALITY)
+                     IPHONE_JPEG_QUALITY, MAX_SOURCE_MEGABYTES,
+                     MAX_SOURCE_MEGAPIXELS, OTHER_IMAGE_QUALITY)
 from .logging_config import configure_logging
 from .storage.alibaba_oss import get_oss_storage, list_albums, download_photo
 from .cache import (MANIFEST, PhotoArrival, cached_folders, cached_photos,
@@ -28,6 +29,8 @@ register_heif_opener()
 CACHE_PROCESSING_PROFILE = (
     f"fit-{CACHE_MAX_WIDTH}x{CACHE_MAX_HEIGHT}-other{OTHER_IMAGE_QUALITY}"
     f"-iphone{IPHONE_JPEG_QUALITY}-v3")
+MAX_SOURCE_BYTES = MAX_SOURCE_MEGABYTES * 1024 * 1024
+MAX_SOURCE_PIXELS = MAX_SOURCE_MEGAPIXELS * 1_000_000
 
 
 @dataclass
@@ -118,13 +121,19 @@ def _cache_path(relative):
     return destination
 
 
-def file_hash(path, stop_event=None):
-    digest = hashlib.md5(usedforsecurity=False)
+def file_hashes(path, stop_event=None):
+    md5 = hashlib.md5(usedforsecurity=False)
+    sha256 = hashlib.sha256()
     with path.open("rb") as source:
         while chunk := source.read(1024 * 1024):
             check_cancelled(stop_event)
-            digest.update(chunk)
-    return digest.hexdigest()
+            md5.update(chunk)
+            sha256.update(chunk)
+    return md5.hexdigest(), sha256.hexdigest()
+
+
+def file_hash(path, stop_event=None):
+    return file_hashes(path, stop_event)[0]
 
 
 def sha256_hash(path, stop_event=None):
@@ -166,6 +175,9 @@ def _prepare_cached_photo(source, destination, entry):
         # invalid image, while the next sync can repair it if OSS changes.
         return False
     with image:
+        if image.width * image.height > MAX_SOURCE_PIXELS:
+            raise ValueError(
+                f"Source image exceeds the {MAX_SOURCE_MEGAPIXELS}-megapixel safety limit.")
         oriented = ImageOps.exif_transpose(image)
         try:
             needs_derivative = (entry["converted"] or oriented.width > CACHE_MAX_WIDTH
@@ -242,7 +254,7 @@ def _reconcile(catalog, storage, result, new_photos, stop_event):
     for path in local:
         check_cancelled(stop_event)
         try:
-            hashes[path] = file_hash(path, stop_event)
+            hashes[path] = file_hashes(path, stop_event)
         except OSError:
             logger.warning("Unable to read cached photo %s; will retrieve it from OSS", path.name)
     with TemporaryDirectory(prefix=".sync-", dir=CACHE_DIR) as staging:
@@ -252,11 +264,11 @@ def _reconcile(catalog, storage, result, new_photos, stop_event):
                          if entry["md5"] and not entry["converted"]}
         # Temporary hard links preserve verified content through name swaps.
         # They do not duplicate image bytes or serve as recovery backups.
-        for path, digest in hashes.items():
-            if digest in wanted_hashes and digest not in reusable:
-                target = Path(staging) / digest
+        for path, (md5, _) in hashes.items():
+            if md5 in wanted_hashes and md5 not in reusable:
+                target = Path(staging) / md5
                 os.link(path, target)
-                reusable[digest] = target
+                reusable[md5] = target
         # A resized or converted cache file cannot match its source checksum.
         # Verify every processed file against its own SHA-256, source identity,
         # and the current processing profile before reusing it.
@@ -268,7 +280,7 @@ def _reconcile(catalog, storage, result, new_photos, stop_event):
             try:
                 old_path = _cache_path(old["path"])
                 expected_sha = old.get("cache_sha256")
-                if expected_sha and old_path in hashes and sha256_hash(old_path, stop_event) == expected_sha:
+                if expected_sha and old_path in hashes and hashes[old_path][1] == expected_sha:
                     safe_id = hashlib.sha256(file_id.encode()).hexdigest()
                     target = Path(staging) / f"converted-{safe_id}"
                     os.link(old_path, target)
@@ -286,12 +298,15 @@ def _reconcile(catalog, storage, result, new_photos, stop_event):
             expected = entry["md5"]
             if file_id in processed_reusable and destination.exists():
                 reusable_path, expected_sha = processed_reusable[file_id]
-                if sha256_hash(destination, stop_event) == expected_sha:
+                if destination in hashes and hashes[destination][1] == expected_sha:
                     entry["cache_sha256"] = expected_sha
                     continue
             temporary = Path(staging) / "download.part"
             publication = Path(staging) / "publication.part"
             try:
+                if entry["size"] is not None and entry["size"] > MAX_SOURCE_BYTES:
+                    raise ValueError(
+                        f"Source photo exceeds the {MAX_SOURCE_MEGABYTES} MiB safety limit.")
                 temporary.unlink(missing_ok=True)
                 publication.unlink(missing_ok=True)
                 if file_id in processed_reusable:
@@ -306,15 +321,17 @@ def _reconcile(catalog, storage, result, new_photos, stop_event):
                     result.downloaded += 1
                 check_cancelled(stop_event)
                 if not publication.exists():
-                    if expected and file_hash(temporary, stop_event) != expected:
+                    downloaded_md5, downloaded_sha256 = file_hashes(temporary, stop_event)
+                    if expected and downloaded_md5 != expected:
                         raise ValueError("Downloaded bytes do not match the source checksum; will retry.")
                     if entry["size"] is not None and temporary.stat().st_size != entry["size"]:
                         raise ValueError("Downloaded size does not match OSS; will retry.")
                     if _prepare_cached_photo(temporary, publication, entry):
                         published = publication
+                        entry["cache_sha256"] = sha256_hash(published, stop_event)
                     else:
                         published = temporary
-                    entry["cache_sha256"] = sha256_hash(published, stop_event)
+                        entry["cache_sha256"] = downloaded_sha256
                 else:
                     published = publication
                 published.replace(destination)

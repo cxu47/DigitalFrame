@@ -178,3 +178,18 @@ def test_download_rejects_an_oss_crc64_mismatch(app, tmp_path):
     with pytest.raises(app.oss.oss.exceptions.InconsistentError):
         app.oss.download_photo(
             "photos/kids/photo.jpg", tmp_path / "photo.part", storage=storage)
+
+
+def test_streaming_download_stops_before_writing_more_than_source_limit(app, tmp_path):
+    body = Mock()
+    body.__enter__ = Mock(return_value=body)
+    body.__exit__ = Mock(return_value=None)
+    body.iter_bytes.return_value = iter([b"a" * (app.oss.MAX_SOURCE_BYTES + 1)])
+    client = Mock()
+    client.get_object.return_value = SimpleNamespace(body=body, hash_crc64=None)
+    storage = app.oss.OssStorage(client, "test-bucket", "photos/")
+    destination = tmp_path / "large.part"
+
+    with pytest.raises(ValueError, match="safety limit"):
+        app.oss.download_photo("photos/kids/large.jpg", destination, storage=storage)
+    assert destination.stat().st_size == 0

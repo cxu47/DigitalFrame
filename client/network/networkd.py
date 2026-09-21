@@ -24,7 +24,6 @@ WPA_SUPPLICANT = "/sbin/wpa_supplicant"
 IP = "/usr/bin/ip"
 NETWORKCTL = "/usr/bin/networkctl"
 SYSTEMCTL = "/usr/bin/systemctl"
-CURL = "/usr/bin/curl"
 IW = "/usr/sbin/iw"
 
 
@@ -110,9 +109,13 @@ def _psk(ssid, password):
 
 
 class Networkd:
-    def __init__(self, interface, mac, *, runtime="/run/digitalframe-network",
+    def __init__(self, interface, mac, country, *, runtime="/run/digitalframe-network",
                  network_file="/run/systemd/network/09-digitalframe.network"):
         self.interface, self.mac = interface, mac.lower()
+        country = str(country).strip().upper()
+        if not re.fullmatch(r"[A-Z]{2}", country):
+            raise NetworkError("The Wi-Fi regulatory country must be a two-letter code.")
+        self.country = country
         self.runtime = Path(runtime)
         self.network_file = Path(network_file)
         self.process = None
@@ -144,7 +147,7 @@ class Networkd:
         actual = Path(f"/sys/class/net/{self.interface}/address").read_text().strip().lower()
         if actual != self.mac:
             raise NetworkError("The configured Wi-Fi adapter identity does not match.")
-        for command in (WPA_SUPPLICANT, IP, NETWORKCTL, SYSTEMCTL, CURL, IW):
+        for command in (WPA_SUPPLICANT, IP, NETWORKCTL, SYSTEMCTL, IW):
             if not Path(command).is_file():
                 raise NetworkError("A required minimal-OS networking command is unavailable.")
         modes = self._run([IW, "phy"], capture_output=True, text=True).stdout
@@ -190,27 +193,6 @@ class Networkd:
 
     def upstream(self):
         return self._address_info(self._status())
-
-    def verify_upstream(self):
-        info = self.upstream()
-        if not info:
-            return None
-        probes = [("https://connectivitycheck.gstatic.com/generate_204", b"", b"204"),
-                  ("https://www.msftconnecttest.com/connecttest.txt", b"Microsoft Connect Test", b"200")]
-        for url, expected, expected_status in probes:
-            try:
-                result = self._run([
-                    CURL, "--silent", "--noproxy", "*", "--ipv4", "--interface", self.interface,
-                    "--max-time", "4", "--connect-timeout", "3", "--max-filesize", "512",
-                    "--proto", "=https", "--write-out", "\n%{http_code}", url,
-                ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5, check=False)
-                if result.returncode == 0:
-                    body, status = result.stdout.rsplit(b"\n", 1)
-                    if status == expected_status and body.strip() == expected:
-                        return info
-            except (OSError, ValueError, subprocess.SubprocessError):
-                pass
-        return None
 
     def scan_access_points(self):
         if self.owns_link:
@@ -308,7 +290,7 @@ class Networkd:
         )
         self._take_link(network)
         config = (
-            f"ctrl_interface={self.control_dir}\ncountry=US\nap_scan=2\n"
+            f"ctrl_interface={self.control_dir}\ncountry={self.country}\nap_scan=2\n"
             "network={\n" f"  ssid={store.data['ap_ssid'].encode('utf-8').hex()}\n"
             "  mode=2\n  frequency=2437\n  key_mgmt=WPA-PSK\n  proto=RSN\n"
             "  pairwise=CCMP\n  group=CCMP\n" f"  psk={_psk(store.data['ap_ssid'], store.data['ap_password'])}\n" "}\n"
@@ -336,7 +318,7 @@ class Networkd:
         )
         self._take_link(network)
         config = (
-            f"ctrl_interface={self.control_dir}\ncountry=US\n"
+            f"ctrl_interface={self.control_dir}\ncountry={self.country}\n"
             "network={\n" f"  ssid={ssid.encode('utf-8').hex()}\n  bssid={bssid}\n"
             "  key_mgmt=WPA-PSK\n  proto=RSN\n  pairwise=CCMP\n  group=CCMP\n"
             f"  psk={_psk(ssid, password)}\n" "}\n"
@@ -346,7 +328,6 @@ class Networkd:
         associated = False
         got_address = False
         dhcp_started = False
-        next_probe = 0
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
                 self.last_failure = "The Wi-Fi driver ended the connection attempt. Choose another access point and try again."
@@ -367,12 +348,8 @@ class Networkd:
                     info = None
                 if info:
                     got_address = True
-                    if time.monotonic() >= next_probe:
-                        verified = self.verify_upstream()
-                        if verified:
-                            self.last_failure = ""
-                            return verified
-                        next_probe = time.monotonic() + 5
+                    self.last_failure = ""
+                    return info
             except OSError:
                 # Association cannot be queried until the child has created
                 # its private control socket.
@@ -384,9 +361,6 @@ class Networkd:
         elif not got_address:
             self.last_failure = (
                 "Wi-Fi authentication succeeded, but the router did not provide an IP address (DHCP). Try another access point.")
-        elif self.last_failure:
-            self.last_failure = (
-                "Wi-Fi and DHCP succeeded, but the internet check failed. Check the router's internet connection and try again.")
         return None
 
     def activate_saved(self, identity):

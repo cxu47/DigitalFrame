@@ -113,6 +113,7 @@ class CacheIndex:
         self.cache = cache
         self.interval = interval
         self._lock = Lock()
+        self._refresh_lock = Lock()
         self._next_refresh = 0
         self._folders = []
         self._photos = []
@@ -122,43 +123,61 @@ class CacheIndex:
         self._details = {}
 
     def refresh(self, force=False):
+        now = time.monotonic()
         with self._lock:
-            if force or time.monotonic() >= self._next_refresh:
-                folders = cached_folders(self.cache)
-                catalog = _read_catalog(self.cache)
-                photos = cached_photos(self.cache, folders, catalog=catalog)
-                metadata = _photo_metadata(catalog)
-                folder_metadata = _entries(catalog, "folder_metadata")
-                counts = dict.fromkeys(folders, 0)
-                dates = {folder: [] for folder in folders}
-                photo_months = {}
-                for folder in folders:
-                    entry = folder_metadata.get(folder, {})
-                    if isinstance(entry, dict) and (date := _latest(entry)) is not None:
-                        dates[folder].append(date)
-                for photo in photos:
-                    folder = photo.parent.name
-                    counts[folder] += 1
-                    entry = metadata.get(photo.relative_to(self.cache).as_posix(), {})
-                    month = entry.get("month")
-                    if not valid_photo_month(month):
-                        month = photo_month(entry.get("created"))
-                    if month is not None:
-                        photo_months[photo] = month
-                    if (date := _latest(entry)) is not None:
-                        dates[folder].append(date)
-                self._details = {folder: FolderDetails(counts[folder], max(dates[folder], default=None))
-                                 for folder in folders}
-                self._details[None] = FolderDetails(len(photos), max(
-                    (date for values in dates.values() for date in values), default=None))
+            if not force and now < self._next_refresh:
+                return
+        # Serialize refresh work while allowing readers to keep using the last
+        # complete snapshot during directory and manifest I/O.
+        with self._lock:
+            have_snapshot = self._next_refresh != 0
+        if not self._refresh_lock.acquire(blocking=force or not have_snapshot):
+            return
+        try:
+            with self._lock:
+                if not force and time.monotonic() < self._next_refresh:
+                    return
+            folders = cached_folders(self.cache)
+            catalog = _read_catalog(self.cache)
+            photos = cached_photos(self.cache, folders, catalog=catalog)
+            metadata = _photo_metadata(catalog)
+            folder_metadata = _entries(catalog, "folder_metadata")
+            counts = dict.fromkeys(folders, 0)
+            dates = {folder: [] for folder in folders}
+            photo_months = {}
+            for folder in folders:
+                entry = folder_metadata.get(folder, {})
+                if isinstance(entry, dict) and (date := _latest(entry)) is not None:
+                    dates[folder].append(date)
+            for photo in photos:
+                folder = photo.parent.name
+                counts[folder] += 1
+                entry = metadata.get(photo.relative_to(self.cache).as_posix(), {})
+                month = entry.get("month")
+                if not valid_photo_month(month):
+                    month = photo_month(entry.get("created"))
+                if month is not None:
+                    photo_months[photo] = month
+                if (date := _latest(entry)) is not None:
+                    dates[folder].append(date)
+            details = {folder: FolderDetails(counts[folder], max(dates[folder], default=None))
+                       for folder in folders}
+            details[None] = FolderDetails(len(photos), max(
+                (date for values in dates.values() for date in values), default=None))
+            months = sorted(set(photo_months.values()), reverse=True)
+            month_counts = {
+                month: sum(value == month for value in photo_months.values())
+                for month in months
+            }
+            with self._lock:
+                self._details = details
                 self._folders, self._photos = folders, photos
                 self._photo_months = photo_months
-                self._months = sorted(set(photo_months.values()), reverse=True)
-                self._month_counts = {
-                    month: sum(value == month for value in photo_months.values())
-                    for month in self._months
-                }
+                self._months = months
+                self._month_counts = month_counts
                 self._next_refresh = time.monotonic() + self.interval
+        finally:
+            self._refresh_lock.release()
 
     def folders(self):
         self.refresh()

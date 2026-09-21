@@ -20,16 +20,21 @@ def main():
     parser.add_argument("--user", required=True)
     parser.add_argument("--interface", required=True)
     parser.add_argument("--mac", required=True)
+    parser.add_argument("--country", required=True,
+                        help="Two-letter ISO Wi-Fi regulatory country, for example CN or US")
     args = parser.parse_args()
     if os.geteuid() != 0:
         parser.error("Run this installer with sudo on the target board.")
     pwd.getpwnam(args.user)
     if not re.fullmatch(r"[a-zA-Z0-9_.-]{1,15}", args.interface) or not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", args.mac):
         parser.error("Invalid adapter interface or permanent MAC address.")
+    country = args.country.strip().upper()
+    if not re.fullmatch(r"[A-Z]{2}", country):
+        parser.error("Country must be a two-letter ISO Wi-Fi regulatory code such as CN or US.")
     actual_mac = Path(f"/sys/class/net/{args.interface}/address")
     if not actual_mac.is_file() or actual_mac.read_text().strip().lower() != args.mac.lower():
         parser.error("The selected adapter identity does not match.")
-    for command in ("/usr/bin/curl", "/usr/bin/ip", "/usr/bin/networkctl", "/usr/bin/systemctl",
+    for command in ("/usr/bin/ip", "/usr/bin/networkctl", "/usr/bin/systemctl",
                     "/usr/sbin/iw", "/sbin/wpa_supplicant"):
         if not Path(command).is_file():
             parser.error(f"Missing OS dependency: {command}")
@@ -53,7 +58,10 @@ def main():
         os.chown(path, 0, 0)
         path.chmod(0o755 if path.is_dir() else 0o644)
     config = Path("/etc/digitalframe-network.json")
-    config.write_text(json.dumps({"user": args.user, "interface": args.interface, "mac": args.mac}))
+    config.write_text(json.dumps({
+        "user": args.user, "interface": args.interface,
+        "mac": args.mac, "country": country,
+    }))
     config.chmod(0o600)
     shutil.copyfile(source / "deploy/digitalframe-network.service", "/etc/systemd/system/digitalframe-network.service")
     run("systemctl", "daemon-reload")

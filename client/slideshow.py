@@ -139,8 +139,11 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                     current_url = url
                     overlay.show_message(f"Control: {url}", url_display_seconds)
             if network is not None:
-                overlay.set_network_message(network.snapshot().banner(
-                    current_url if not callable(control_url) else control_url(), network.control_port))
+                banner = network.snapshot().banner(
+                    current_url if not callable(control_url) else control_url(), network.control_port)
+                cloud_problem = status is not None and status.network_problem()
+                overlay.set_network_message(
+                    banner or ("Cloud connection problem. Retrying..." if cloud_problem else None))
             elif status is not None:
                 overlay.set_network_problem(status.network_problem())
             message, revision = settings.notification_snapshot()
@@ -175,6 +178,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                 return False
 
         while running and check():
+            settings.reconcile_selection()
             selected = settings.playback_selection()
             photos = (index.photos(selected[2] if selected[0] == "months" else None)
                       if index is not None else get_cached_photos())

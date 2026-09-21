@@ -12,7 +12,7 @@ import pytest
 
 from client.network.client import NetworkClient
 from client.network.controller import NetworkController, SETUP_HOTSPOT_PASSWORD, StateFile
-from client.network.networkd import parse_scan_results, select_subnet
+from client.network.networkd import Networkd, parse_scan_results, select_subnet
 from client.network.service import Handler, Server
 from client.network.state import NetworkError, NetworkSnapshot, validate_credentials
 from client.control.app import create_app
@@ -23,7 +23,6 @@ from client.settings import RuntimeSettings
 def recovery(tmp_path):
     backend = Mock()
     backend.upstream.return_value = None
-    backend.verify_upstream.return_value = None
     backend.ensure_access_point.return_value = "10.42.0.1"
     backend.ap_running.return_value = True
     backend.connect.return_value = None
@@ -49,29 +48,29 @@ def test_offline_remains_idle_across_hours_events_and_restart(recovery):
     backend.reset_mock()
     clock[0] += 100000
     controller.step()
-    backend.verify_upstream.assert_not_called()
+    backend.upstream.assert_not_called()
     backend.ensure_access_point.assert_not_called()
     controller.event()
     controller.step()
     backend.ap_running.assert_called_once()
-    backend.verify_upstream.assert_not_called()
+    backend.upstream.assert_not_called()
     backend.connect.assert_not_called()
     new = NetworkController(backend, StateFile(store.path))
     new.start()
     assert new.snapshot.can_submit
     assert (new.snapshot.ap_ssid, new.snapshot.ap_password) == credentials
     backend.activate_saved.assert_not_called()
-    backend.verify_upstream.assert_not_called()
+    backend.upstream.assert_not_called()
 
 
 def test_startup_always_uses_chooser_even_with_a_healthy_saved_connection(recovery):
     controller, backend, store, clock = recovery
-    backend.verify_upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
+    backend.upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
     controller.start()
     assert controller.snapshot.state == "ap"
     assert controller.snapshot.can_submit
     assert controller.snapshot.message == "Set up Wi-Fi."
-    backend.verify_upstream.assert_not_called()
+    backend.upstream.assert_not_called()
     backend.ensure_access_point.assert_called_once()
     assert store.data["waiting"]
 
@@ -81,12 +80,12 @@ def test_selected_online_connection_enters_ap_after_outage(recovery):
     controller.start()
     controller.publish(state="online", address="192.168.1.90", ssid="winter")
     store.data["waiting"] = False
-    backend.verify_upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
+    backend.upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
     backend.reset_mock()
     controller.event()  # A link/address event or suspected cloud failure.
     controller.step()
     assert controller.snapshot.online
-    backend.verify_upstream.return_value = None
+    backend.upstream.return_value = None
     clock[0] += 31
     controller.step()
     assert controller.snapshot.state == "ap"
@@ -130,7 +129,7 @@ def test_one_submission_waits_for_response_then_commits_or_restores_hotspot(reco
         backend.reset_mock()
         controller.step()
         backend.connect.assert_not_called()
-        backend.verify_upstream.assert_not_called()
+        backend.upstream.assert_not_called()
 
 
 def test_timed_out_connection_attempt_returns_to_wifi_chooser(recovery):
@@ -234,7 +233,7 @@ def test_failed_ap_does_not_loop_on_its_own_disconnect_events(recovery):
         controller.event()
         controller.step()
     backend.ensure_access_point.assert_not_called()
-    backend.verify_upstream.assert_not_called()
+    backend.upstream.assert_not_called()
     controller.event(recover=True)  # Adapter or helper became available again.
     controller.step()
     backend.ensure_access_point.assert_called_once()
@@ -255,6 +254,37 @@ def test_subnet_selection_checks_routes_and_known_previous_networks():
     assert select_subnet(["10.0.0.0/8"]) == "172.30.240.1"
     with pytest.raises(NetworkError):
         select_subnet(["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"])
+
+
+def test_regulatory_country_applies_to_hotspot_and_home_station(tmp_path, monkeypatch):
+    backend = Networkd("wlan0", "02:00:00:00:00:01", "cn", runtime=tmp_path,
+                       network_file=tmp_path / "network.conf")
+    store = StateFile(tmp_path / "state.json")
+    store.data.update(ap_ssid="DigitalFrame-TEST", ap_password="jamesbond")
+    monkeypatch.setattr(backend, "_routes", lambda: [])
+    monkeypatch.setattr(backend, "_take_link", lambda network: None)
+    configs = []
+
+    def start(config, mode):
+        configs.append((config, mode))
+        backend.process = Mock(poll=Mock(return_value=None))
+        backend.mode = mode
+
+    monkeypatch.setattr(backend, "_start_supplicant", start)
+    monkeypatch.setattr(backend, "_status", lambda **kwargs: {"mode": "AP"})
+    assert backend.ensure_access_point(store) == "10.42.0.1"
+    assert "country=CN\n" in configs[0][0] and configs[0][1] == "ap"
+
+    monkeypatch.setattr(backend, "_status", lambda **kwargs: {
+        "mode": "station", "wpa_state": "COMPLETED", "ssid": "home"})
+    monkeypatch.setattr(backend, "_run", lambda *args, **kwargs: Mock())
+    monkeypatch.setattr(backend, "_address_info", lambda status: {
+        "address": "192.168.1.23", "ssid": status["ssid"], "interface": "wlan0"})
+    assert backend.connect("home", "02:00:00:00:00:02", "secret-password", store)["address"] == "192.168.1.23"
+    assert "country=CN\n" in configs[1][0] and configs[1][1] == "station"
+    assert backend.upstream()["ssid"] == "home"  # No third-party HTTP probe.
+    with pytest.raises(NetworkError, match="two-letter"):
+        Networkd("wlan0", "02:00:00:00:00:01", "China")
 
 
 def test_scan_keeps_mesh_satellites_as_individual_access_points():
@@ -387,7 +417,7 @@ def test_hotspot_banner_is_unlimited_through_changes_attempts_and_recovery(app, 
     clock = [0]
     monkeypatch.setattr("client.overlay.time.monotonic", lambda: clock[0])
     state = NetworkSnapshot(state="ap", ap_ssid="DigitalFrame-TEST", ap_password="setup-password",
-                            ap_address="10.42.0.1", message="Internet unavailable — cached slideshow continues.")
+                            ap_address="10.42.0.1", message="Wi-Fi unavailable — cached slideshow continues.")
     banner = SlideshowOverlay(player, None, 0)
     banner.set_network_message(state.banner("http://10.42.0.1:8000"))
     for _ in range(3):
@@ -406,3 +436,13 @@ def test_hotspot_banner_is_unlimited_through_changes_attempts_and_recovery(app, 
     banner.new_frame()
     banner.set_network_message(replace(state, state="online").banner())
     assert 1 not in player.overlays
+
+
+def test_online_wifi_still_displays_a_cloud_sync_failure(app):
+    app.FakeMPV.wait_hook = lambda player, _: setattr(player, "running", False)
+    status = Mock()
+    status.network_problem.return_value = True
+    network = Mock(control_port=8000)
+    network.snapshot.return_value = NetworkSnapshot(state="online", address="192.168.1.23")
+    app.slideshow.show_slideshow(RuntimeSettings(1), network=network, status=status)
+    assert "Cloud connection problem" in app.FakeMPV.instances[-1].overlays[1][0]

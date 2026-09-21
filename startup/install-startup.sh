@@ -1,6 +1,6 @@
 #!/bin/bash
 # Review first, then run on the frame as:
-#   sudo /bin/bash /home/chang/DigitalFrame/startup/install-startup.sh
+#   sudo /bin/bash /home/chang/DigitalFrame/startup/install-startup.sh CN
 #
 # This stages boot configuration but deliberately does not start, stop, enable,
 # disable, or restart any service. The new behavior begins at the next reboot.
@@ -11,6 +11,7 @@ readonly frame_home="/home/chang"
 readonly project_dir="${frame_home}/DigitalFrame"
 readonly wifi_interface="wlan0"
 readonly wifi_mac="ac:6a:a3:29:b9:61"
+readonly wifi_country="${1:-}"
 readonly source_dir="${project_dir}/startup"
 readonly getty_dropin_dir="/etc/systemd/system/getty@tty1.service.d"
 readonly getty_dropin="${getty_dropin_dir}/90-digitalframe-autologin.conf"
@@ -35,7 +36,8 @@ require_same_or_absent() {
 }
 
 [[ "$EUID" -eq 0 ]] || fail "run this script with sudo"
-[[ "${SUDO_USER:-}" == "$frame_user" ]] || fail "run it as: sudo /bin/bash $source_dir/install-startup.sh"
+[[ "$#" -eq 1 && "$wifi_country" =~ ^[A-Z]{2}$ ]] || fail "provide the target's two-letter Wi-Fi country (for example: install-startup.sh CN)"
+[[ "${SUDO_USER:-}" == "$frame_user" ]] || fail "run it as: sudo /bin/bash $source_dir/install-startup.sh $wifi_country"
 [[ "$(/usr/bin/id -u "$frame_user")" == "1000" ]] || fail "expected chang to have UID 1000"
 [[ "$(/usr/bin/stat -c '%U' "$project_dir")" == "$frame_user" ]] || fail "$project_dir is not owned by chang"
 [[ "$(/usr/bin/systemctl get-default)" == "multi-user.target" ]] || fail "the default boot target is no longer multi-user.target"
@@ -69,7 +71,8 @@ require_same_or_absent "$source_dir/digitalframe-network-control.sudoers" "$sudo
 /usr/bin/python3 "$project_dir/deploy/install-network-helper.py" \
   --user "$frame_user" \
   --interface "$wifi_interface" \
-  --mac "$wifi_mac"
+  --mac "$wifi_mac" \
+  --country "$wifi_country"
 
 # Add only a getty override, a conditional login-profile hook, and the two
 # exact passwordless service-control commands required by the launcher.

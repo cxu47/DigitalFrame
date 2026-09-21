@@ -88,19 +88,19 @@ class NetworkController:
         self.publish(state="unavailable", address="", message="Wi-Fi setup unavailable.")
 
     def check_online(self):
-        info = self.backend.verify_upstream()
+        info = self.backend.upstream()
         if info:
             self.backend.block_forwarding(False)
             if self.store.data.get("waiting") is not False:
                 self.store.data["waiting"] = False
                 self.store.save()
             self.publish(state="online", address=info["address"], ssid=info["ssid"],
-                         message="Already connected. Wi-Fi setup becomes available when internet is lost.")
+                         message="Wi-Fi connected. Setup becomes available if the link is lost.")
             self.next_check = self.clock() + self.interval
         else:
             self.access_point()
 
-    def access_point(self, message="Internet unavailable — cached slideshow continues."):
+    def access_point(self, message="Wi-Fi unavailable — cached slideshow continues."):
         self.next_check = float("inf")
         # Commit the recovery intention before making any disruptive change.
         self.store.data["waiting"] = True

@@ -11,6 +11,7 @@ from dotenv import dotenv_values
 from ..cache import supported_photo
 from ..cancellation import check_cancelled
 from ..config import (
+    MAX_SOURCE_MEGABYTES,
     NETWORK_TIMEOUT,
     OSS_CREDENTIALS_FILE,
 )
@@ -18,6 +19,7 @@ from ..config import (
 
 logger = logging.getLogger(__name__)
 DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+MAX_SOURCE_BYTES = MAX_SOURCE_MEGABYTES * 1024 * 1024
 
 
 def _required(name, values):
@@ -184,9 +186,14 @@ def download_photo(object_key, destination, *, storage=None, stop_event=None):
         bucket=storage.bucket, key=object_key))
     logger.debug("Starting Alibaba OSS object download")
     checksum = Crc64(0)
+    downloaded = 0
     with result.body as body, open(destination, "wb") as output:
         for chunk in body.iter_bytes(block_size=DOWNLOAD_CHUNK_SIZE):
             check_cancelled(stop_event)
+            downloaded += len(chunk)
+            if downloaded > MAX_SOURCE_BYTES:
+                raise ValueError(
+                    f"Source photo exceeds the {MAX_SOURCE_MEGABYTES} MiB safety limit.")
             output.write(chunk)
             checksum.update(chunk)
     server_checksum = getattr(result, "hash_crc64", None)

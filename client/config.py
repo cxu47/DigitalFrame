@@ -71,6 +71,10 @@ def __getattr__(name):
         return value
     if name in {"CACHE_MAX_WIDTH", "CACHE_MAX_HEIGHT"}:
         return bounded_integer_from_env(name, "1600" if name.endswith("WIDTH") else "900", 1, 16384)
+    if name == "MAX_SOURCE_MEGABYTES":
+        return bounded_integer_from_env(name, "5", 1, 1024)
+    if name == "MAX_SOURCE_MEGAPIXELS":
+        return bounded_integer_from_env(name, "50", 1, 1000)
     if name in {"HDMI_MAX_WIDTH", "HDMI_MAX_HEIGHT"}:
         return bounded_integer_from_env(name, "1920" if name.endswith("WIDTH") else "1080", 1, 16384)
     if name == "HDMI_PREFERRED_HZ":

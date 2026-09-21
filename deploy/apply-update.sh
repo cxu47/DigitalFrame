@@ -42,10 +42,6 @@ if ! git merge-base --is-ancestor "$local_revision" "$remote_revision"; then
   emit error "$local_revision" "$remote_revision" diverged
   exit 2
 fi
-if ! git merge --ff-only "$remote_revision"; then
-  emit error "$local_revision" "$remote_revision" merge
-  exit 1
-fi
 
 uv_bin="${UV_BIN:-}"
 if [[ -z "$uv_bin" ]]; then
@@ -57,6 +53,35 @@ if [[ -z "$uv_bin" ]]; then
     emit error "$local_revision" "$remote_revision" uv-missing
     exit 1
   fi
+fi
+
+# Prove that the fetched revision has a valid lock and can build its complete
+# runtime environment before changing the live checkout. The final sync below
+# normally reuses this warmed uv cache.
+preflight_root="$(mktemp -d "${TMPDIR:-/tmp}/digitalframe-update.XXXXXX")"
+preflight_checkout="$preflight_root/checkout"
+cleanup_preflight() {
+  if [[ -d "$preflight_checkout" ]]; then
+    git worktree remove --force "$preflight_checkout" >/dev/null 2>&1 || true
+  fi
+  rmdir "$preflight_root" >/dev/null 2>&1 || true
+}
+trap cleanup_preflight EXIT
+if ! git worktree add --quiet --detach "$preflight_checkout" "$remote_revision"; then
+  emit error "$local_revision" "$remote_revision" preflight
+  exit 1
+fi
+if ! UV_PROJECT_ENVIRONMENT="$preflight_checkout/.venv" \
+  "$uv_bin" sync --project "$preflight_checkout" --locked --no-dev; then
+  emit error "$local_revision" "$remote_revision" preflight
+  exit 1
+fi
+cleanup_preflight
+trap - EXIT
+
+if ! git merge --ff-only "$remote_revision"; then
+  emit error "$local_revision" "$remote_revision" merge
+  exit 1
 fi
 if ! "$uv_bin" sync --locked --no-dev; then
   emit error "$local_revision" "$remote_revision" sync

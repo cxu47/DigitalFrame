@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 
 
 class SyncWorker:
-    def __init__(self, new_photos, status, index, interval, *, network=None):
+    def __init__(self, new_photos, status, index, interval, *, network=None, settings=None):
         self.new_photos, self.status, self.index = new_photos, status, index
         self.interval = interval
         self.network = network
+        self.settings = settings
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, name="photo-sync", daemon=True)
 
@@ -34,6 +35,8 @@ class SyncWorker:
                     self.status.report("Sync", result.error, network=False)
                     self.network.suspect()
                 self.index.refresh(force=True)
+                if self.settings is not None:
+                    self.settings.reconcile_selection()
             except Exception as exc:
                 logger.exception("Background sync failed; cached playback continues")
                 self.status.report_exception("Sync", exc)

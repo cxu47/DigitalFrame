@@ -40,6 +40,7 @@ def run_display(*, sync_interval=None):
         DISPLAY_SECONDS, folders=index.folders, months=index.months,
         selected_folder=SELECTED_FOLDER, selected_months=SELECTED_MONTHS,
         view_mode=VIEW_MODE, env_path=ENV_FILE)
+    settings.reconcile_selection()
     network = None
     if WIFI_SETUP_ENABLED:
         if CONTROL_HOST != "0.0.0.0":
@@ -58,7 +59,10 @@ def run_display(*, sync_interval=None):
     try:
         if sync_interval is not None:
             from .main import SyncWorker
-            worker = SyncWorker(new_photos, status, index, sync_interval, **network_args)
+            worker = SyncWorker(
+                new_photos, status, index, sync_interval,
+                settings=settings, **network_args,
+            )
             worker.start()
         show_slideshow(settings, control_url=lambda: panel.url,
                        url_display_seconds=CONTROL_URL_DISPLAY_SECONDS,

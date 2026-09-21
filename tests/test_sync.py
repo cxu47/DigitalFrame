@@ -176,6 +176,27 @@ def test_large_jpeg_is_bounded_to_1600x900_and_reused(app, monkeypatch):
     assert download.call_count == 1
 
 
+def test_oversize_source_metadata_skips_download_and_keeps_existing_cache(app, monkeypatch):
+    listing, download = setup_sync(app, monkeypatch, [album("kids", [photo("one")])])
+    assert app.sync.sync_photos().success
+    listing.return_value = [album("kids", [{**photo("updated", "one.jpg"),
+                                           "size": app.sync.MAX_SOURCE_BYTES + 1}])]
+    result = app.sync.sync_photos()
+    assert not result.success and result.failed == 1
+    assert "safety limit" in result.error
+    assert download.call_count == 1
+    assert (app.cache / "kids/one.jpg").read_bytes() == b"one"
+
+
+def test_image_pixel_limit_is_checked_before_decoding(app, monkeypatch, tmp_path):
+    monkeypatch.setattr(app.sync, "MAX_SOURCE_PIXELS", 100)
+    source = tmp_path / "large-pixel-count.png"
+    source.write_bytes(image_bytes("PNG", (11, 10)))
+    with pytest.raises(ValueError, match="megapixel safety limit"):
+        app.sync._prepare_cached_photo(
+            source, tmp_path / "resized.jpg", {"converted": False, "path": "kids/large.jpg"})
+
+
 def test_portrait_and_non_jpeg_photos_use_same_aspect_ratio_cap(app, tmp_path):
     from PIL import Image
 

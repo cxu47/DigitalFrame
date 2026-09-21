@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 import re
+from tempfile import NamedTemporaryFile
 from threading import Lock
 
 from dotenv import set_key
@@ -67,43 +68,77 @@ class RuntimeSettings:
         self._notification = ""
         self._notify(f"Seconds per photo: {self._display_seconds}")
 
-    def _save_env_locked(self, key, value):
+    def _save_env_locked(self, values):
         if self._env_path is None:
             return
+        temporary = None
         try:
             self._env_path.parent.mkdir(parents=True, exist_ok=True)
-            set_key(self._env_path, key, value, quote_mode="always")
+            current = self._env_path.read_text(encoding="utf-8") if self._env_path.exists() else ""
+            mode = self._env_path.stat().st_mode & 0o777 if self._env_path.exists() else 0o600
+            with NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self._env_path.parent,
+                prefix=f".{self._env_path.name}.", delete=False,
+            ) as target:
+                target.write(current)
+                temporary = Path(target.name)
+            temporary.chmod(mode)
+            for key, value in values.items():
+                set_key(temporary, key, value, quote_mode="always")
+            temporary.replace(self._env_path)
             # Keep this process consistent with the file. The restart path
             # removes these inherited values so python-dotenv reloads them.
-            os.environ[key] = value
-        except (OSError, ValueError):
-            logger.exception("Slideshow setting %s could not be saved to .env", key)
+            os.environ.update(values)
+        except (OSError, UnicodeError, ValueError):
+            logger.exception("Slideshow settings could not be saved to .env")
             raise SettingsPersistenceError(
                 "Unable to save slideshow settings. Check that the board's .env is writable."
             ) from None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
-    def selection_snapshot(self):
+    def _available(self):
         folders = sorted(self._folders())
         months = sorted({month for month in self._months()
                          if valid_photo_month(month)}, reverse=True)
+        return folders, months
+
+    def reconcile_selection(self):
+        """Apply availability-driven fallbacks at an explicit mutation boundary."""
+        folders, months = self._available()
         with self._lock:
-            if self._selected_folder is not None and self._selected_folder not in folders:
-                self._selected_folder = None
-                self._save_env_locked("SELECTED_FOLDER", "")
-                if self._view_mode == "folder":
-                    self._notify("Photo folder: All")
-            selected_months = tuple(
-                month for month in months if month in self._selected_months)
+            updates = {}
+            folder = self._selected_folder
+            selected_months = self._selected_months
+            view_mode = self._view_mode
+            notification = None
+            if folder is not None and folder not in folders:
+                folder = None
+                updates["SELECTED_FOLDER"] = ""
+                if view_mode == "folder":
+                    notification = "Photo folder: All"
+            selected_months = tuple(month for month in months if month in selected_months)
             if selected_months != self._selected_months:
+                updates["SELECTED_MONTHS"] = ",".join(selected_months)
+                if view_mode == "months" and selected_months:
+                    notification = self._month_message(selected_months)
+            if view_mode == "months" and not selected_months:
+                view_mode = "folder"
+                updates["VIEW_MODE"] = "folder"
+                notification = f"Photo folder: {folder or 'All'}"
+            if updates:
+                self._save_env_locked(updates)
+                self._selected_folder = folder
                 self._selected_months = selected_months
-                self._save_env_locked("SELECTED_MONTHS", ",".join(selected_months))
-                if self._view_mode == "months":
-                    if selected_months:
-                        self._notify(self._month_message(selected_months))
-            if self._view_mode == "months" and not self._selected_months:
-                self._view_mode = "folder"
-                self._save_env_locked("VIEW_MODE", "folder")
-                self._notify(f"Photo folder: {self._selected_folder or 'All'}")
+                self._view_mode = view_mode
+                if notification is not None:
+                    self._notify(notification)
+        return folders, months
+
+    def selection_snapshot(self, *, available=None):
+        folders, months = self._available() if available is None else available
+        with self._lock:
             return (folders, self._selected_folder, months,
                     self._selected_months, self._view_mode)
 
@@ -136,8 +171,10 @@ class RuntimeSettings:
         if folder is not None and folder not in self._folders():
             raise ValueError("Choose an existing folder or All.")
         with self._lock:
-            self._save_env_locked("SELECTED_FOLDER", folder or "")
-            self._save_env_locked("VIEW_MODE", "folder")
+            self._save_env_locked({
+                "SELECTED_FOLDER": folder or "",
+                "VIEW_MODE": "folder",
+            })
             self._selected_folder = folder
             self._view_mode = "folder"
             self._notify(f"Photo folder: {folder if folder is not None else 'All'}")
@@ -155,8 +192,10 @@ class RuntimeSettings:
         requested = set(selected)
         selected = tuple(month for month in available if month in requested)
         with self._lock:
-            self._save_env_locked("SELECTED_MONTHS", ",".join(selected))
-            self._save_env_locked("VIEW_MODE", "months")
+            self._save_env_locked({
+                "SELECTED_MONTHS": ",".join(selected),
+                "VIEW_MODE": "months",
+            })
             self._selected_months = selected
             self._view_mode = "months"
             self._notify(self._month_message(selected))
@@ -167,7 +206,6 @@ class RuntimeSettings:
         self._notification_revision += 1
 
     def notification_snapshot(self) -> tuple[str, int]:
-        self.selection_snapshot()  # Also report automatic selection fallback.
         with self._lock:
             return self._notification, self._notification_revision
 
@@ -180,6 +218,6 @@ class RuntimeSettings:
         if type(value) is not int or value <= 0:
             raise ValueError(INTEGER_ERROR)
         with self._lock:
-            self._save_env_locked("DISPLAY_SECONDS", str(value))
+            self._save_env_locked({"DISPLAY_SECONDS": str(value)})
             self._display_seconds = value
             self._notify(f"Seconds per photo: {value}")

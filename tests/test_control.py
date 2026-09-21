@@ -120,7 +120,7 @@ def test_month_form_selects_multiple_buckets_and_overrides_folder_mode():
         5, folders=lambda: ["kids", "summer"], months=lambda: months)
     with TestClient(create_app(settings)) as browser:
         page = browser.get("/").text
-        assert 'Photo folder <small aria-label="Active viewing mode">✓ Active</small>' in page
+        assert 'Control by folder <small aria-label="Active viewing mode">✓ Active</small>' in page
         assert 'value="2026-09">09-2026' in page
         assert 'value="2026-08">08-2026' in page
 
@@ -133,7 +133,7 @@ def test_month_form_selects_multiple_buckets_and_overrides_folder_mode():
         assert settings.view_mode == "months"
         assert settings.selected_months == ("2026-09", "2025-12")
         page = browser.get("/").text
-        assert 'Photo months <small aria-label="Active viewing mode">✓ Active</small>' in page
+        assert 'Control by month <small aria-label="Active viewing mode">✓ Active</small>' in page
         assert 'value="2026-09" checked>09-2026' in page
         assert 'value="2025-12" checked>12-2025' in page
 
@@ -147,7 +147,7 @@ def test_month_form_selects_multiple_buckets_and_overrides_folder_mode():
         assert settings.selected_folder == "summer"
         assert settings.selected_months == ("2026-09", "2025-12")
         page = browser.get("/").text
-        assert 'Photo folder <small aria-label="Active viewing mode">✓ Active</small>' in page
+        assert 'Control by folder <small aria-label="Active viewing mode">✓ Active</small>' in page
         assert 'value="2026-09" checked>09-2026' in page
 
 

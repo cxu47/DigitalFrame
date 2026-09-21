@@ -62,20 +62,11 @@ class NetworkClient:
         except Exception:
             raise NetworkError("The Wi-Fi helper is unavailable. Cached playback continues.") from None
 
-    def reserve(self, ssid, bssid, password):
-        return self.request("reserve", ssid=ssid, bssid=bssid, password=password)["operation"]
-
     def connect(self, ssid, bssid, password):
         self.request("connect", ssid=ssid, bssid=bssid, password=password)
 
-    def reserve_refresh(self):
-        return self.request("reserve_refresh")["operation"]
-
     def refresh(self):
         self.request("refresh")
-
-    def commit(self, operation):
-        self.request("commit", operation=operation)
 
     def suspect(self):
         try:

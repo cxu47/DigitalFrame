@@ -127,7 +127,9 @@ class UpdateManager:
                 ))
             if result.returncode == 0 and state == "current":
                 return self._set(UpdateSnapshot(state, f"Software is already current at {remote}."))
-            if reason == "sync":
+            if reason == "preflight":
+                message = "The update environment could not be prepared; application code was not changed."
+            elif reason == "sync":
                 message = "Code was updated, but uv sync failed. Run deploy/apply-update.sh from a terminal."
             elif reason == "dirty":
                 message = "Local changes appeared after the check; installation was stopped."

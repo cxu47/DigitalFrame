@@ -92,7 +92,7 @@ def test_runtime_starts_workers_without_waiting_for_sync_and_always_stops_them(a
             calls.append('panel stop')
             self.browser.close()
     class Worker:
-        def __init__(self, queue, status, index, interval):
+        def __init__(self, queue, status, index, interval, *, settings):
             assert interval == 30
         def start(self):
             calls.append('worker scheduled')
