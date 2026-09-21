@@ -41,7 +41,7 @@ def bounded_integer_from_env(name, default, minimum, maximum):
 
 def __getattr__(name):
     # Module attributes remain convenient for each workflow, without requiring
-    # Google credentials to open a cache-only display or display settings to sync.
+    # Cloud credentials are only needed by sync, not cache-only playback or settings.
     if name == "WIFI_SETUP_ENABLED":
         value = os.getenv(name, "false").strip().lower()
         if value not in {"true", "false", "1", "0"}:
@@ -102,6 +102,13 @@ def __getattr__(name):
         return int(value)
     if name == "LOG_LEVEL":
         return os.getenv(name, "INFO")
+    if name == "OSS_CREDENTIALS_FILE":
+        filename = os.getenv(name, "oss.env").strip()
+        path = Path(filename)
+        if (not filename or path.is_absolute()
+                or len(path.parts) != 1 or path.name in {".", ".."}):
+            raise ValueError("OSS_CREDENTIALS_FILE must be a filename inside SECRETS_FOLDER.")
+        return CLIENT_DIR / required_env("SECRETS_FOLDER") / path
     if name == "GOOGLE_SCOPES":
         return ["https://www.googleapis.com/auth/drive.readonly"]
     if name == "GOOGLE_DRIVE_FOLDER_ID":

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "digitalframe"
 version = "0.1.0"
-description = "A self-updating digital photo frame with Google Drive synchronization"
+description = "A self-updating digital photo frame with Alibaba OSS synchronization"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
@@ -23,6 +23,7 @@ dependencies = [
     "starlette==1.6.0",
     "httplib2==0.32.0",
     "google-auth-httplib2==0.4.1",
+    "alibabacloud-oss-v2==1.4.0",
 ]
 
 [project.scripts]

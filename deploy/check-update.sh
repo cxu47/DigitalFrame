@@ -22,13 +22,13 @@ fi
 if ! GIT_TERMINAL_PROMPT=0 \
   GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes" \
   timeout --signal=TERM --kill-after=5s 45s git fetch --quiet origin \
-  refs/heads/release/2.x:refs/remotes/origin/release/2.x; then
+  refs/heads/release/3.x:refs/remotes/origin/release/3.x; then
   emit error 0 "" "" fetch
   exit 1
 fi
 
 local_revision="$(git rev-parse HEAD)"
-remote_revision="$(git rev-parse refs/remotes/origin/release/2.x)"
+remote_revision="$(git rev-parse refs/remotes/origin/release/3.x)"
 dirty=0
 [[ -z "$(git status --porcelain --untracked-files=normal)" ]] || dirty=1
 

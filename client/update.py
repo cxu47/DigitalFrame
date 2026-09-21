@@ -92,11 +92,11 @@ class UpdateManager:
                 return self._set(UpdateSnapshot(state, f"Software is current at {local}.{suffix}"))
             if state == "ahead":
                 return self._set(UpdateSnapshot(
-                    state, "The local checkout is ahead of release/2.x; automatic update is disabled."
+                    state, "The local checkout is ahead of release/3.x; automatic update is disabled."
                 ))
             if state == "diverged":
                 return self._set(UpdateSnapshot(
-                    state, "The local checkout has diverged from release/2.x; automatic update is disabled."
+                    state, "The local checkout has diverged from release/3.x; automatic update is disabled."
                 ))
             logger.warning("Update check returned an invalid state")
             return self._set(UpdateSnapshot("error", "Unable to interpret the update check."))

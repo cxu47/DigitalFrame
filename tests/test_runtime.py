@@ -26,8 +26,8 @@ from client.cli import main
 main(sys.argv[1:])
 """
     env = os.environ.copy()
-    for name in ("CACHE_FOLDER", "SECRETS_FOLDER", "GOOGLE_CREDENTIALS_FILE", "GOOGLE_TOKEN_FILE",
-                 "DISPLAY_SECONDS", "IDLE_SECONDS", "SYNC_INTERVAL", "GOOGLE_DRIVE_FOLDER_ID"):
+    for name in ("CACHE_FOLDER", "SECRETS_FOLDER", "OSS_CREDENTIALS_FILE",
+                 "DISPLAY_SECONDS", "IDLE_SECONDS", "SYNC_INTERVAL"):
         env.pop(name, None)
     for args in ([], ["--help"]):
         result = subprocess.run(
@@ -181,7 +181,7 @@ def test_cache_only_runtime_does_not_sync(app, monkeypatch):
     from client import runtime
     panel = Mock()
     display = Mock()
-    sync = Mock(side_effect=AssertionError('Cache-only display accessed Drive'))
+    sync = Mock(side_effect=AssertionError('Cache-only display accessed OSS'))
     monkeypatch.setattr(runtime, 'ControlSupervisor', Mock(return_value=panel))
     monkeypatch.setattr(app.slideshow, 'show_slideshow', display)
     monkeypatch.setattr(app.sync, 'sync_photos', sync)
@@ -231,7 +231,7 @@ def test_sync_cli_has_nonzero_exit_on_network_failure(app, monkeypatch):
 def test_configuration_is_only_required_for_relevant_workflow(command):
     env = os.environ.copy()
     if command == 'slideshow':
-        for key in ['SECRETS_FOLDER', 'GOOGLE_CREDENTIALS_FILE', 'GOOGLE_TOKEN_FILE', 'GOOGLE_DRIVE_FOLDER_ID', 'SYNC_INTERVAL']:
+        for key in ['SECRETS_FOLDER', 'OSS_CREDENTIALS_FILE', 'SYNC_INTERVAL']:
             env.pop(key, None)
         code = 'import client.slideshow; import client.runtime'
     else:

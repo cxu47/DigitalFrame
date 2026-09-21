@@ -19,6 +19,7 @@ def isolated_environment(tmp_path, monkeypatch):
         "GOOGLE_CREDENTIALS_FILE": "credentials.json",
         "GOOGLE_TOKEN_FILE": "token.json",
         "GOOGLE_DRIVE_FOLDER_ID": "test-folder",
+        "OSS_CREDENTIALS_FILE": "oss.env",
         "DISPLAY_SECONDS": "1",
         "SELECTED_MONTHS": "",
         "VIEW_MODE": "folder",
@@ -46,12 +47,24 @@ def allow_local_socket(monkeypatch):
 
 @pytest.fixture
 def app(tmp_path, monkeypatch, isolated_environment):
+    secrets = tmp_path / "secrets"
+    secrets.mkdir()
+    (secrets / "oss.env").write_text(
+        "OSS_ACCESS_KEY_ID=test-id\n"
+        "OSS_ACCESS_KEY_SECRET=test-secret\n"
+        "OSS_BUCKET_NAME=test-bucket\n"
+        "OSS_REGION=cn-test\n"
+        "OSS_ENDPOINT=\n"
+        "OSS_PREFIX=photos/\n",
+        encoding="utf-8",
+    )
     # Import only after the environment fixture has disabled local .env loading.
     from client import config, main, slideshow, sync
-    from client.storage import google_drive
+    from client.storage import alibaba_oss, google_drive
 
     modules = SimpleNamespace(
-        config=config, main=main, slideshow=slideshow, sync=sync, drive=google_drive,
+        config=config, main=main, slideshow=slideshow, sync=sync,
+        drive=google_drive, oss=alibaba_oss,
     )
     modules.RealPhotoReadAhead = slideshow.PhotoReadAhead
     modules.cache = tmp_path / "cache"
@@ -115,13 +128,12 @@ def app(tmp_path, monkeypatch, isolated_environment):
             pass
 
     monkeypatch.setattr(slideshow, "PhotoReadAhead", ImmediateReadAhead)
-    secrets = tmp_path / "secrets"
-    secrets.mkdir()
     for module in (modules.config, modules.sync, modules.slideshow):
         monkeypatch.setattr(module, "CACHE_DIR", modules.cache)
     monkeypatch.setattr(modules.config, "ENV_FILE", modules.env_file)
     for module in (modules.config, modules.drive):
         monkeypatch.setattr(module, "GOOGLE_TOKEN_FILE", secrets / "token.json")
         monkeypatch.setattr(module, "GOOGLE_CREDENTIALS_FILE", secrets / "credentials.json")
-    monkeypatch.setattr(sync, "get_drive_service", Mock(return_value=Mock()))
+    monkeypatch.setattr(modules.oss, "OSS_CREDENTIALS_FILE", secrets / "oss.env")
+    monkeypatch.setattr(sync, "get_oss_storage", Mock(return_value=Mock()))
     return modules

@@ -29,6 +29,8 @@ def is_network_error(exc):
             ("google.auth.exceptions", "TransportError"),
             ("httplib2", "ServerNotFoundError"),
             ("httplib2.error", "ServerNotFoundError"),
+            ("alibabacloud_oss_v2.exceptions", "RequestError"),
+            ("alibabacloud_oss_v2.exceptions", "ResponseError"),
         } for base in type(exc).__mro__):
             return True
         exc = exc.__cause__ or exc.__context__

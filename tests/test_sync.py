@@ -1,4 +1,4 @@
-"""Recover actual cache bytes from current Drive metadata, regardless of manifest state."""
+"""Recover actual cache bytes from current cloud metadata, regardless of manifest state."""
 
 import hashlib
 from io import BytesIO
@@ -80,15 +80,34 @@ def test_sync_mirrors_albums_empty_folders_and_reuses_one_service(app, monkeypat
     assert app.sync.sync_photos(queue).success
     assert cached(app) == {"kids/family.jpg": b"one", "summer/family.jpg": b"two"}
     assert app.slideshow.get_cached_folders() == ["empty", "kids", "summer"]
-    service = app.sync.get_drive_service.return_value
-    listing.assert_called_once_with("test-folder", service=service, stop_event=None)
-    assert all(call.kwargs['service'] is service for call in download.call_args_list)
-    service.close.assert_called_once()
+    storage = app.sync.get_oss_storage.return_value
+    listing.assert_called_once_with(storage=storage, stop_event=None)
+    assert all(call.kwargs['storage'] is storage for call in download.call_args_list)
     assert queue.get_nowait().path == app.cache / "kids/family.jpg"
     assert queue.get_nowait().path == app.cache / "summer/family.jpg"
     assert app.sync.sync_photos(queue).success
     assert download.call_count == 2
     assert queue.empty()
+
+
+def test_oss_style_object_key_and_etag_reuse_cached_bytes(app, monkeypatch):
+    payload = b"photo-bytes"
+    remote = [album("photos/kids/", [{
+        "id": "photos/kids/one.jpg",
+        "name": "one.jpg",
+        "etag": "source-identity",
+        "size": len(payload),
+        "modifiedTime": "2026-09-12T00:00:00Z",
+        "createdTime": "2026-09-12T00:00:00Z",
+    }], name="kids")]
+    download = Mock(side_effect=lambda file_id, path, **kwargs: path.write_bytes(payload))
+    monkeypatch.setattr(app.sync, "list_albums", Mock(return_value=remote))
+    monkeypatch.setattr(app.sync, "download_photo", download)
+
+    assert app.sync.sync_photos().success
+    assert app.sync.sync_photos().success
+    assert (app.cache / "kids/one.jpg").read_bytes() == payload
+    assert download.call_count == 1
 
 
 def test_iphone_photo_is_converted_once_to_same_stem_jpeg_and_never_cached_as_heic(
@@ -122,7 +141,7 @@ def test_iphone_photo_is_converted_once_to_same_stem_jpeg_and_never_cached_as_he
     assert download.call_count == 1
     assert queue.empty()
 
-    # A Drive rename reuses the verified JPEG derivative without decoding the
+    # A cloud rename reuses the verified JPEG derivative without decoding the
     # HEIC again, while exposing only the new same-stem name to playback.
     remote[0]["photos"][0]["name"] = "renamed.heic"
     assert app.sync.sync_photos(queue).success
@@ -228,7 +247,7 @@ def test_changed_cache_bytes_are_repaired_even_with_unchanged_manifest(app, monk
 
 
 @pytest.mark.parametrize('manifest_state', ['missing', 'corrupt'])
-def test_manifest_rebuild_uses_drive_and_removes_stale_album_photos(app, monkeypatch, manifest_state):
+def test_manifest_rebuild_uses_remote_and_removes_stale_album_photos(app, monkeypatch, manifest_state):
     listing, _ = setup_sync(app, monkeypatch, [album('kids', [photo('one'), photo('deleted')])])
     app.sync.sync_photos()
     manifest = app.cache / app.sync.MANIFEST
@@ -241,7 +260,7 @@ def test_manifest_rebuild_uses_drive_and_removes_stale_album_photos(app, monkeyp
     assert cached(app) == {'kids/one.jpg': b'one'}
 
 
-def test_interrupted_filename_swap_recovers_from_drive_checksums(app, monkeypatch):
+def test_interrupted_filename_swap_recovers_from_source_checksums(app, monkeypatch):
     listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('a'), photo('b')])])
     app.sync.sync_photos()
     listing.return_value = [album('kids', [photo('a', 'b.jpg'), photo('b', 'a.jpg')])]
@@ -370,7 +389,7 @@ def test_missing_remote_checksum_forces_download_instead_of_trusting_manifest(ap
     assert download.call_count == 2
 
 
-def test_partly_applied_swap_recovers_missing_bytes_from_drive(app, monkeypatch):
+def test_partly_applied_swap_recovers_missing_bytes_from_remote(app, monkeypatch):
     listing, download = setup_sync(app, monkeypatch, [album('kids', [photo('a'), photo('b')])])
     app.sync.sync_photos()
     listing.return_value = [album('kids', [photo('a', 'b.jpg'), photo('b', 'a.jpg')])]
@@ -384,7 +403,7 @@ def test_partly_applied_swap_recovers_missing_bytes_from_drive(app, monkeypatch)
         assert not app.sync.sync_photos().success
     assert app.sync.sync_photos().success
     assert cached(app) == {'kids/a.jpg': b'b', 'kids/b.jpg': b'a'}
-    assert download.call_count == 3  # Lost b bytes were fetched from Drive, not a backup.
+    assert download.call_count == 3  # Lost b bytes were fetched remotely, not from a backup.
 
 
 def test_lock_is_enforced_across_processes(app):

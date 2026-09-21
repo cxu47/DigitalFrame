@@ -12,8 +12,8 @@ PLAYBACK_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 MANIFEST = ".photos.json"
 
 
-def drive_time(value):
-    """Parse Drive timestamps without letting damaged metadata stop playback."""
+def cloud_time(value):
+    """Parse cloud timestamps without letting damaged metadata stop playback."""
     if not isinstance(value, str):
         return None
     try:
@@ -24,13 +24,13 @@ def drive_time(value):
 
 
 def newest_first(value):
-    created = drive_time(value)
+    created = cloud_time(value)
     return -created.timestamp() if created is not None else float("inf")
 
 
 def photo_month(value):
-    """Return a stable UTC YYYY-MM bucket for a Drive creation timestamp."""
-    created = drive_time(value)
+    """Return a stable UTC YYYY-MM bucket for a cloud timestamp."""
+    created = cloud_time(value)
     return created.strftime("%Y-%m") if created is not None else None
 
 
@@ -78,7 +78,7 @@ class PhotoArrival:
 
 def _latest(entry):
     return max((date for field in ("created", "modified")
-                if (date := drive_time(entry.get(field))) is not None), default=None)
+                if (date := cloud_time(entry.get(field))) is not None), default=None)
 
 
 def supported_photo(name):

@@ -1,4 +1,4 @@
-"""Reconcile a disposable photo cache against fresh, complete Drive metadata."""
+"""Reconcile a disposable photo cache against fresh, complete OSS metadata."""
 
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,9 +15,9 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pillow_heif import register_heif_opener
 
 from .config import (CACHE_DIR, CACHE_MAX_HEIGHT, CACHE_MAX_WIDTH,
-                     GOOGLE_DRIVE_FOLDER_ID, IPHONE_JPEG_QUALITY, OTHER_IMAGE_QUALITY)
+                     IPHONE_JPEG_QUALITY, OTHER_IMAGE_QUALITY)
 from .logging_config import configure_logging
-from .storage.google_drive import get_drive_service, list_albums, download_photo
+from .storage.alibaba_oss import get_oss_storage, list_albums, download_photo
 from .cache import (MANIFEST, PhotoArrival, cached_folders, cached_photos,
                     iphone_photo, newest_first, photo_month, supported_photo)
 from .cancellation import Cancelled, check_cancelled
@@ -57,7 +57,7 @@ def cache_lock():
 
 
 def _names(items):
-    """Preserve normal names, escaping path separators and disambiguating Drive duplicates."""
+    """Preserve normal names, escaping path separators and disambiguating duplicates."""
     result = {}
     used = set()
     for item in sorted(items, key=lambda item: item["id"]):
@@ -96,6 +96,7 @@ def _catalog(albums):
                 "converted": iphone_photo(photo["name"]),
                 "processing": CACHE_PROCESSING_PROFILE,
                 "md5": photo.get("md5Checksum"),
+                "etag": photo.get("etag"),
                 "size": int(photo["size"]) if "size" in photo else None,
                 "modified": photo.get("modifiedTime"),
                 "created": photo.get("createdTime"),
@@ -148,8 +149,9 @@ def _same_source(previous, current):
         return False
     if current.get("md5"):
         return previous.get("md5") == current["md5"]
-    # Drive normally supplies MD5 for binary HEIC/HEIF files. If it does not,
-    # stable size and modification metadata are the best available identity.
+    if current.get("etag"):
+        return previous.get("etag") == current["etag"]
+    # Stable size and modification metadata are the best remaining identity.
     return (current.get("size") is not None and current.get("modified") is not None
             and previous.get("size") == current["size"]
             and previous.get("modified") == current["modified"])
@@ -161,7 +163,7 @@ def _prepare_cached_photo(source, destination, entry):
         image = Image.open(source)
     except UnidentifiedImageError:
         # Preserve the existing download behavior. Playback will reject an
-        # invalid image, while the next sync can repair it if Drive changes.
+        # invalid image, while the next sync can repair it if OSS changes.
         return False
     with image:
         oriented = ImageOps.exif_transpose(image)
@@ -199,15 +201,14 @@ def _prepare_cached_photo(source, destination, entry):
 
 def sync_photos(new_photos=None, *, stop_event=None, status=None):
     result = SyncResult()
-    service = None
     try:
         with cache_lock():
             check_cancelled(stop_event)
-            # One transport belongs to this sync thread for the entire pass.
-            service = get_drive_service()
-            catalog = _catalog(list_albums(GOOGLE_DRIVE_FOLDER_ID, service=service, stop_event=stop_event))
+            # One client belongs to this sync thread for the entire pass.
+            storage = get_oss_storage()
+            catalog = _catalog(list_albums(storage=storage, stop_event=stop_event))
             check_cancelled(stop_event)
-            _reconcile(catalog, service, result, new_photos, stop_event)
+            _reconcile(catalog, storage, result, new_photos, stop_event)
         result.success = not result.failed
         if status is not None:
             if result.success:
@@ -222,24 +223,18 @@ def sync_photos(new_photos=None, *, stop_event=None, status=None):
         logger.exception("Photo sync failed; cached playback will continue")
         if status is not None:
             status.report("Sync", result.error, network=result.network_error)
-    finally:
-        if service is not None:
-            try:
-                service.close()
-            except Exception:
-                logger.warning("Could not close the Drive transport", exc_info=True)
     return result
 
 
-def _reconcile(catalog, service, result, new_photos, stop_event):
+def _reconcile(catalog, storage, result, new_photos, stop_event):
     # Remove staging left by a killed process, after obtaining the process lock
-    # and a complete Drive listing. These are temporary links, never backups.
+    # and a complete OSS listing. These are temporary links, never backups.
     for abandoned in CACHE_DIR.glob(".sync-*"):
         check_cancelled(stop_event)
         if abandoned.is_dir() and not abandoned.is_symlink():
             shutil.rmtree(abandoned)
     # Hash actual bytes every pass. An old/corrupt manifest is never evidence
-    # that a local photo is correct; only current Drive metadata is authoritative.
+    # that a local photo is correct; only current OSS metadata is authoritative.
     previous = _previous_catalog()
     previous_photos = previous.get("photos", {}) if isinstance(previous.get("photos"), dict) else {}
     local = cached_photos(CACHE_DIR, source_formats=True)
@@ -249,7 +244,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
         try:
             hashes[path] = file_hash(path, stop_event)
         except OSError:
-            logger.warning("Unable to read cached photo %s; will retrieve it from Drive", path.name)
+            logger.warning("Unable to read cached photo %s; will retrieve it from OSS", path.name)
     with TemporaryDirectory(prefix=".sync-", dir=CACHE_DIR) as staging:
         reusable = {}
         processed_reusable = {}
@@ -262,7 +257,7 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 target = Path(staging) / digest
                 os.link(path, target)
                 reusable[digest] = target
-        # A resized or converted cache file cannot match its source Drive MD5.
+        # A resized or converted cache file cannot match its source checksum.
         # Verify every processed file against its own SHA-256, source identity,
         # and the current processing profile before reusing it.
         for file_id, entry in catalog["photos"].items():
@@ -274,7 +269,8 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                 old_path = _cache_path(old["path"])
                 expected_sha = old.get("cache_sha256")
                 if expected_sha and old_path in hashes and sha256_hash(old_path, stop_event) == expected_sha:
-                    target = Path(staging) / f"converted-{file_id}"
+                    safe_id = hashlib.sha256(file_id.encode()).hexdigest()
+                    target = Path(staging) / f"converted-{safe_id}"
                     os.link(old_path, target)
                     processed_reusable[file_id] = (target, expected_sha)
             except (KeyError, OSError, ValueError):
@@ -306,14 +302,14 @@ def _reconcile(catalog, service, result, new_photos, stop_event):
                     os.link(reusable[expected], temporary)
                 else:
                     logger.info("Downloading %s", entry["source_name"])
-                    download_photo(file_id, temporary, service=service, stop_event=stop_event)
+                    download_photo(file_id, temporary, storage=storage, stop_event=stop_event)
                     result.downloaded += 1
                 check_cancelled(stop_event)
                 if not publication.exists():
                     if expected and file_hash(temporary, stop_event) != expected:
-                        raise ValueError("Downloaded bytes do not match the Google Drive checksum; will retry.")
+                        raise ValueError("Downloaded bytes do not match the source checksum; will retry.")
                     if entry["size"] is not None and temporary.stat().st_size != entry["size"]:
-                        raise ValueError("Downloaded size does not match Google Drive; will retry.")
+                        raise ValueError("Downloaded size does not match OSS; will retry.")
                     if _prepare_cached_photo(temporary, publication, entry):
                         published = publication
                     else:

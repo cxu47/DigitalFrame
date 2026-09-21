@@ -1,4 +1,4 @@
-"""Update checks are explicit, fixed to release/2.x, and fast-forward only."""
+"""Update checks are explicit, fixed to release/3.x, and fast-forward only."""
 
 import os
 from pathlib import Path
@@ -69,7 +69,7 @@ def test_shell_scripts_fetch_then_fast_forward_and_sync(tmp_path):
     remote.mkdir()
     publisher.mkdir()
     _git(remote, "init", "--bare")
-    _git(publisher, "init", "-b", "release/2.x")
+    _git(publisher, "init", "-b", "release/3.x")
     _git(publisher, "config", "user.name", "DigitalFrame tests")
     _git(publisher, "config", "user.email", "tests@example.invalid")
     (publisher / "deploy").mkdir()
@@ -79,8 +79,8 @@ def test_shell_scripts_fetch_then_fast_forward_and_sync(tmp_path):
     _git(publisher, "add", ".")
     _git(publisher, "commit", "-m", "initial")
     _git(publisher, "remote", "add", "origin", str(remote))
-    _git(publisher, "push", "-u", "origin", "release/2.x")
-    _git(tmp_path, "clone", "--branch", "release/2.x", str(remote), str(checkout))
+    _git(publisher, "push", "-u", "origin", "release/3.x")
+    _git(tmp_path, "clone", "--branch", "release/3.x", str(remote), str(checkout))
 
     current = subprocess.run(
         [str(checkout / "deploy/check-update.sh")], cwd=checkout,
@@ -91,7 +91,7 @@ def test_shell_scripts_fetch_then_fast_forward_and_sync(tmp_path):
     (publisher / "version.txt").write_text("two\n")
     _git(publisher, "add", "version.txt")
     _git(publisher, "commit", "-m", "update")
-    _git(publisher, "push", "origin", "release/2.x")
+    _git(publisher, "push", "origin", "release/3.x")
     available = subprocess.run(
         [str(checkout / "deploy/check-update.sh")], cwd=checkout,
         check=True, capture_output=True, text=True,
@@ -116,7 +116,7 @@ def test_shell_scripts_fetch_then_fast_forward_and_sync(tmp_path):
     (publisher / "version.txt").write_text("three\n")
     _git(publisher, "add", "version.txt")
     _git(publisher, "commit", "-m", "second update")
-    _git(publisher, "push", "origin", "release/2.x")
+    _git(publisher, "push", "origin", "release/3.x")
     (checkout / "local-note.txt").write_text("do not discard\n")
     dirty = subprocess.run(
         [str(checkout / "deploy/check-update.sh")], cwd=checkout,

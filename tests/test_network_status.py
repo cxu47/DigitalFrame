@@ -8,6 +8,7 @@ import pytest
 from requests.exceptions import ConnectionError as RequestsConnectionError, ReadTimeout
 from google.auth.exceptions import TransportError
 from httplib2 import ServerNotFoundError
+from alibabacloud_oss_v2.exceptions import RequestError, ResponseError
 
 from client.status import RuntimeStatus, is_network_error
 
@@ -21,6 +22,8 @@ from client.status import RuntimeStatus, is_network_error
     (ReadTimeout('Read timed out'), True),
     (TransportError('Authorization transport failed'), True),
     (ServerNotFoundError('DNS failed'), True),
+    (RequestError(error=RequestsConnectionError('OSS connection failed')), True),
+    (ResponseError(error=ReadTimeout('OSS read timed out')), True),
     (OSError(errno.ENETUNREACH, 'No route'), True),
     (OSError(errno.EADDRINUSE, 'Port occupied'), False),
     (OSError(errno.ENOSPC, 'Disk full'), False),

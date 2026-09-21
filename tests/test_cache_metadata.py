@@ -1,4 +1,4 @@
-"""Drive dates drive offline ordering and album details, independent of local mtimes."""
+"""Cloud dates drive offline ordering and album details, independent of local mtimes."""
 
 import json
 import os
@@ -41,7 +41,7 @@ def seed(cache):
     return catalog
 
 
-def test_offline_order_and_details_use_drive_dates_and_only_cached_album_photos(tmp_path):
+def test_offline_order_and_details_use_cloud_dates_and_only_cached_album_photos(tmp_path):
     seed(tmp_path)
     expected = ["kids/z.jpg", "summer/b.png", "kids/a.jpg", "summer/unknown.jpg"]
     assert [p.relative_to(tmp_path).as_posix() for p in cached_photos(tmp_path)] == expected

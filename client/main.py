@@ -1,4 +1,4 @@
-"""Run cached playback immediately while one worker synchronizes Drive."""
+"""Run cached playback immediately while one worker synchronizes OSS."""
 
 import logging
 import threading

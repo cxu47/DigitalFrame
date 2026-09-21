@@ -257,7 +257,7 @@ def show_slideshow(settings=None, *, control_url=None, url_display_seconds=30,
                     except OSError:
                         pass
                     if status is not None:
-                        status.report("Photos", f"Cannot display {path.name}. Drive sync will check the cached file.")
+                        status.report("Photos", f"Cannot display {path.name}. OSS sync will check the cached file.")
                     if not player.running:
                         running = False
                         break
