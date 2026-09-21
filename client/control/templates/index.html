@@ -1,65 +1,64 @@
 <!doctype html>
-<html lang="en">
+<html lang="$page_language">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DigitalFrame control</title>
+  <title>$title</title>
 </head>
 <body>
-  <h1>DigitalFrame control</h1>
-  <h2>Slideshow control</h2>
-  <p>Current duration: $current seconds per photo.</p>
+  <p><a href="/?lang=$toggle_language" lang="$toggle_page_language">$toggle_label</a></p>
+  <h1>$title</h1>
+  <h2>$slideshow_control</h2>
+  <p>$current_duration</p>
   <form method="post" action="/settings">
-    <label for="seconds">Seconds per photo</label>
+    <label for="seconds">$seconds_per_photo</label>
     <input id="seconds" name="display_seconds" type="text" inputmode="numeric"
            value="$value" aria-describedby="error">
-    <button type="submit">Apply</button>
+    <button type="submit">$apply</button>
   </form>
   <form method="post" action="/folder">
-    <label for="folder">Photo folder $folder_mode_check</label>
+    <label for="folder">$photo_folder $folder_mode_check</label>
     <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
-    <button type="submit">Apply folder</button>
+    <button type="submit">$apply_folder</button>
   </form>
   <form method="post" action="/months">
     <fieldset aria-describedby="error">
-      <legend>Photo months $month_mode_check</legend>
+      <legend>$photo_months $month_mode_check</legend>
       $month_options
     </fieldset>
-    <button type="submit">Apply months</button>
+    <button type="submit">$apply_months</button>
   </form>
-  <h2>Software update</h2>
+  <h2>$software_update</h2>
   <p>$update_status</p>
   <form method="post" action="/update/check">
     <input type="hidden" name="update_token" value="$update_token">
-    <button type="submit">Check for updates</button>
+    <button type="submit">$check_updates</button>
   </form>
   $update_form
-  <h2>Wi-Fi control</h2>
+  <h2>$wifi_control</h2>
   <p>$wifi_status</p>
   $wifi_current
   <form method="post" action="/wifi">
     <input type="hidden" name="token" value="$wifi_token">
-    <p><label for="wifi-bssid">Wi-Fi access point</label>
+    <p><label for="wifi-bssid">$wifi_access_point</label>
       <select id="wifi-bssid" name="bssid" required aria-describedby="error"$wifi_disabled>$wifi_options</select></p>
-    <p><label for="wifi-password">Wi-Fi password</label>
+    <p><label for="wifi-password">$wifi_password</label>
       <input id="wifi-password" name="password" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="error"$wifi_readonly></p>
-    <button type="submit"$wifi_disabled>Apply Wi-Fi</button>
+    <button type="submit"$wifi_disabled>$apply_wifi</button>
   </form>
   <form method="post" action="/wifi/refresh">
     <input type="hidden" name="token" value="$wifi_token">
-    <button type="submit"$wifi_refresh_disabled>Refresh access points</button>
+    <button type="submit"$wifi_refresh_disabled>$refresh_access_points</button>
   </form>
-  <h2>Notes</h2>
+  <h2>$notes</h2>
   <p id="error" role="alert">$error</p>
-  <section aria-label="Error history" aria-live="polite">$issues</section>
-  <p>Changes apply from the next photo. The duration, folder, selected months, and active viewing mode are saved for the next start.</p>
-  <p>Applying a folder or a group of months makes that viewing mode active. Both controls remain available.</p>
-  <p>Refresh this page after syncing to update folders, months, picture counts, and dates.</p>
-  <p>Counts show cached pictures. Updated dates use the latest Drive date for the folder or its pictures (UTC).</p>
-  <p>Photos play newest first by their creation date in Google Drive. Month buckets use that date in UTC.</p>
-  <p>When offline, join the setup Wi-Fi shown on the slideshow and open its displayed address.
-     Stay connected if your phone warns that this network has no internet.</p>
-  <p>Wi-Fi setup makes one connection attempt per submission. If it fails, reconnect to the same setup network.
-     Cached playback continues. Refresh this page to see the latest status.</p>
+  <section aria-label="$error_history" aria-live="polite">$issues</section>
+  <p>$note_apply</p>
+  <p>$note_modes</p>
+  <p>$note_refresh</p>
+  <p>$note_counts</p>
+  <p>$note_order</p>
+  <p>$note_offline</p>
+  <p>$note_wifi_attempt</p>
 </body>
 </html>
