@@ -203,9 +203,11 @@ def test_update_requires_explicit_token_protected_check_before_showing_install()
         applied = browser.post(
             "/update/apply", data={"update_token": token}, follow_redirects=False,
         )
-        assert applied.status_code == 200
-        assert "Updated to bbb. DigitalFrame is restarting now." in applied.text
-        assert 'action="/update/apply"' not in browser.get("/").text
+        assert applied.status_code == 303
+        assert applied.headers["location"] == "/"
+        home = browser.get("/").text
+        assert "Updated to bbb. DigitalFrame is restarting now." in home
+        assert 'action="/update/apply"' not in home
         assert updater.applied == 1
         assert restarts == [True]
 

@@ -92,10 +92,10 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
                         error="Refresh this page before installing an update.", status_code=403)
         result = updater.apply()
         if result.state == "updated" and request_restart is not None:
-            # Starlette runs this only after the complete HTML response has
-            # been sent, so the browser can show the restart confirmation.
+            # Starlette runs this only after the redirect response has been
+            # sent, so the browser returns to the stable home URL first.
             background_tasks.add_task(request_restart)
-            return page(settings.display_seconds, request=request)
+            return RedirectResponse("/", status_code=303)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/wifi")
@@ -120,8 +120,7 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
             return page(settings.display_seconds, request=request, error=str(exc), status_code=409)
         except Exception:
             return page(settings.display_seconds, request=request, error="Unable to reach the Wi-Fi helper. Please try again.", status_code=503)
-        return page(settings.display_seconds, request=request,
-                    error="Trying your Wi-Fi. Your phone will disconnect from the frame. If connection fails, reconnect to the same DigitalFrame network.")
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/wifi/refresh")
     def refresh_wifi(request: Request, token: Annotated[str, Form()] = ""):
@@ -139,8 +138,7 @@ def create_app(settings: RuntimeSettings, status=None, *, index=None, network=No
         except Exception:
             return page(settings.display_seconds, request=request,
                         error="Unable to reach the Wi-Fi helper. Please try again.", status_code=503)
-        return page(settings.display_seconds, request=request,
-                    error="Refreshing access points. Your phone will disconnect; reconnect to the same DigitalFrame network in about 20–30 seconds.")
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/folder")
     async def update_folder(request: Request, folder: Annotated[str, Form()] = ""):

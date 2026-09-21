@@ -284,7 +284,9 @@ def test_wifi_html_sections_validation_disabled_states_and_credential_handoff(re
     settings = RuntimeSettings(5, folders=lambda: ["kids"])
     with TestClient(create_app(settings, network=network)) as browser:
         page = browser.get("/").text
-        assert page.index("<h2>Slideshow control") < page.index("<h2>Wi-Fi control") < page.index("<h2>Notes")
+        assert (page.index("<h2>Slideshow control") <
+                page.index("<h2>Wi-Fi control") <
+                page.index("<h2>Logs and comments"))
         assert 'id="wifi-password" name="password" type="text"' in page
         assert '<button type="submit">Apply Wi-Fi</button>' in page
         assert '<button type="submit">Refresh access points</button>' in page
@@ -296,8 +298,9 @@ def test_wifi_html_sections_validation_disabled_states_and_credential_handoff(re
         assert browser.post("/wifi", data=payload, headers={"origin": "https://evil.invalid"}).status_code == 403
         assert browser.post("/wifi", data={**payload, "password": "short"}).status_code == 422
         network.connect.assert_not_called()
-        response = browser.post("/wifi", data=payload)
-        assert response.status_code == 200
+        response = browser.post("/wifi", data=payload, follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"] == "/"
         assert payload["password"] not in response.text
         network.connect.assert_called_once_with("home", "02:00:00:00:00:01", "test-secret")
         backend.connect.assert_not_called()
@@ -319,9 +322,11 @@ def test_wifi_refresh_route_uses_one_atomic_helper_request(recovery):
     network.snapshot.side_effect = lambda: controller.snapshot
     with TestClient(create_app(RuntimeSettings(5), network=network)) as browser:
         token = re.search(r'name="token" value="([^"]+)"', browser.get("/").text)[1]
-        response = browser.post("/wifi/refresh", data={"token": token})
-        assert response.status_code == 200
-        assert "reconnect to the same DigitalFrame network" in response.text
+        response = browser.post(
+            "/wifi/refresh", data={"token": token}, follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == "/"
         network.refresh.assert_called_once_with()
 
 
