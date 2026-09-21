@@ -34,7 +34,8 @@ def recovery(tmp_path):
     )
     store = StateFile(tmp_path / "network.json")
     clock = [100.0]
-    controller = NetworkController(backend, store, clock=lambda: clock[0])
+    controller = NetworkController(backend, store, clock=lambda: clock[0],
+                                   saved_connection_seconds=0)
     return controller, backend, store, clock
 
 
@@ -55,24 +56,101 @@ def test_offline_remains_idle_across_hours_events_and_restart(recovery):
     backend.ap_running.assert_called_once()
     backend.upstream.assert_not_called()
     backend.connect.assert_not_called()
-    new = NetworkController(backend, StateFile(store.path))
+    new = NetworkController(backend, StateFile(store.path), saved_connection_seconds=0)
     new.start()
     assert new.snapshot.can_submit
     assert (new.snapshot.ap_ssid, new.snapshot.ap_password) == credentials
     backend.activate_saved.assert_not_called()
-    backend.upstream.assert_not_called()
+    backend.upstream.assert_called_once_with(timeout=2)
 
 
-def test_startup_always_uses_chooser_even_with_a_healthy_saved_connection(recovery):
+def test_startup_uses_a_healthy_saved_connection(recovery):
     controller, backend, store, clock = recovery
     backend.upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
     controller.start()
+    assert controller.snapshot.state == "online"
+    assert controller.snapshot.address == "192.168.1.90"
+    backend.upstream.assert_called_once_with(timeout=2)
+    backend.ensure_access_point.assert_not_called()
+    assert store.data["waiting"] is False
+
+
+def test_saved_connection_gets_a_short_window_before_wifi_chooser(recovery):
+    _, backend, store, clock = recovery
+    controller = NetworkController(backend, store, clock=lambda: clock[0],
+                                   saved_connection_seconds=15)
+    controller.start()
+    assert controller.snapshot.state == "starting"
+    assert backend.upstream.call_count == 1
+    assert "DigitalFrame-" not in controller.snapshot.banner()
+    clock[0] += 6
+    controller.step()
+    assert controller.snapshot.state == "starting"
+    clock[0] += 9
+    controller.step()
     assert controller.snapshot.state == "ap"
     assert controller.snapshot.can_submit
-    assert controller.snapshot.message == "Set up Wi-Fi."
+    assert store.data["waiting"] is True
+    assert backend.ensure_access_point.call_count == 1
+    backend.reset_mock()
+    clock[0] += 3600
+    controller.step()
     backend.upstream.assert_not_called()
-    backend.ensure_access_point.assert_called_once()
-    assert store.data["waiting"]
+
+
+def test_saved_connection_can_succeed_during_startup_window(recovery):
+    _, backend, store, clock = recovery
+    controller = NetworkController(backend, store, clock=lambda: clock[0],
+                                   saved_connection_seconds=15)
+    controller.start()
+    backend.upstream.return_value = {"address": "192.168.1.90", "ssid": "winter"}
+    clock[0] += 4
+    controller.step()
+    assert controller.snapshot.online
+    assert store.data["waiting"] is False
+    backend.ensure_access_point.assert_not_called()
+
+
+def test_saved_connection_probe_errors_still_fall_back_to_wifi_chooser(recovery):
+    _, backend, store, clock = recovery
+    controller = NetworkController(backend, store, clock=lambda: clock[0],
+                                   saved_connection_seconds=15)
+    backend.upstream.side_effect = OSError("supplicant not ready")
+    controller.start()
+    assert controller.snapshot.state == "starting"
+    clock[0] += 15
+    controller.step()
+    assert controller.snapshot.can_submit
+    assert store.data["waiting"] is True
+
+
+def test_stop_during_saved_connection_window_returns_without_starting_hotspot(recovery):
+    _, backend, store, clock = recovery
+    controller = NetworkController(backend, store, clock=lambda: clock[0],
+                                   saved_connection_seconds=15)
+    controller.start()
+    controller.stop()
+    clock[0] += 20
+    controller.step()
+    backend.ensure_access_point.assert_not_called()
+
+
+def test_worker_stop_wakes_saved_connection_wait(recovery):
+    _, backend, store, _ = recovery
+    probed = Event()
+    backend.upstream.side_effect = lambda **kwargs: (probed.set(), None)[1]
+    controller = NetworkController(backend, store, saved_connection_seconds=15)
+    worker = Thread(target=controller.run)
+    worker.start()
+    try:
+        assert probed.wait(2)
+        controller.stop()
+        worker.join(2)
+        assert not worker.is_alive()
+        backend.ensure_access_point.assert_not_called()
+    finally:
+        controller.stop()
+        worker.join(2)
 
 
 def test_selected_online_connection_enters_ap_after_outage(recovery):
@@ -219,7 +297,15 @@ def test_failed_boot_activation_falls_back_to_ap(recovery):
 def test_corrupt_recovery_record_does_not_attempt_upstream(tmp_path):
     path = tmp_path / "state.json"
     path.write_text("broken")
-    assert StateFile(path).data["waiting"]
+    store = StateFile(path)
+    assert store.data["waiting"] and store.damaged
+    backend = Mock()
+    backend.ensure_access_point.return_value = "10.42.0.1"
+    backend.scan_access_points.return_value = ()
+    controller = NetworkController(backend, store)
+    controller.start()
+    assert controller.snapshot.state == "ap"
+    backend.upstream.assert_not_called()
 
 
 def test_failed_ap_does_not_loop_on_its_own_disconnect_events(recovery):
@@ -278,7 +364,7 @@ def test_regulatory_country_applies_to_hotspot_and_home_station(tmp_path, monkey
     monkeypatch.setattr(backend, "_status", lambda **kwargs: {
         "mode": "station", "wpa_state": "COMPLETED", "ssid": "home"})
     monkeypatch.setattr(backend, "_run", lambda *args, **kwargs: Mock())
-    monkeypatch.setattr(backend, "_address_info", lambda status: {
+    monkeypatch.setattr(backend, "_address_info", lambda status, **kwargs: {
         "address": "192.168.1.23", "ssid": status["ssid"], "interface": "wlan0"})
     assert backend.connect("home", "02:00:00:00:00:02", "secret-password", store)["address"] == "192.168.1.23"
     assert "country=CN\n" in configs[1][0] and configs[1][1] == "station"

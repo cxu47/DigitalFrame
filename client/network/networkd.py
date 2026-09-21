@@ -171,15 +171,15 @@ class Networkd:
             control.close()
             client.unlink(missing_ok=True)
 
-    def _status(self, *, helper=None):
-        output = self._control("STATUS", helper=helper)
+    def _status(self, *, helper=None, timeout=5):
+        output = self._control("STATUS", helper=helper, timeout=timeout)
         return dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
 
-    def _address_info(self, status):
+    def _address_info(self, status, *, timeout=5):
         if status.get("wpa_state") != "COMPLETED" or status.get("mode", "station") != "station":
             return None
         result = self._run([IP, "-j", "-4", "address", "show", "dev", self.interface],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=timeout)
         for link in json.loads(result.stdout):
             for entry in link.get("addr_info", []):
                 address = entry.get("local", "")
@@ -191,8 +191,8 @@ class Networkd:
                     return {"address": address, "ssid": status.get("ssid", "Wi-Fi"), "interface": self.interface}
         return None
 
-    def upstream(self):
-        return self._address_info(self._status())
+    def upstream(self, *, timeout=5):
+        return self._address_info(self._status(timeout=timeout), timeout=timeout)
 
     def scan_access_points(self):
         if self.owns_link:

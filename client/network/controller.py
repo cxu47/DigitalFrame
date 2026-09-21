@@ -13,11 +13,13 @@ from .state import NetworkError, NetworkSnapshot, validate_credentials
 
 logger = logging.getLogger(__name__)
 SETUP_HOTSPOT_PASSWORD = "jamesbond"
+SAVED_CONNECTION_SECONDS = 15
 
 
 class StateFile:
     def __init__(self, path):
         self.path = Path(path)
+        self.damaged = False
         try:
             self.data = json.loads(self.path.read_text())
             if not isinstance(self.data, dict):
@@ -25,8 +27,9 @@ class StateFile:
         except FileNotFoundError:
             self.data = {}
         except (ValueError, OSError):
-            # A damaged recovery record must never cause an upstream retry.
+            # Do not trust a damaged recovery record when deciding how to start.
             self.data = {"waiting": True}
+            self.damaged = True
 
     def save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -40,13 +43,16 @@ class StateFile:
 
 
 class NetworkController:
-    def __init__(self, backend, store, *, clock=time.monotonic, interval=30):
+    def __init__(self, backend, store, *, clock=time.monotonic, interval=30,
+                 saved_connection_seconds=SAVED_CONNECTION_SECONDS):
         self.backend, self.store = backend, store
         self.clock, self.interval = clock, interval
+        self.saved_connection_seconds = saved_connection_seconds
         self.condition = Condition()
         self.snapshot = NetworkSnapshot()
         self.pending = None
         self.next_check = float("inf")
+        self.saved_deadline = float("inf")
         self.changed = False
         self.recover_requested = False
         self.stopped = False
@@ -63,6 +69,8 @@ class NetworkController:
     def start(self):
         try:
             self.backend.prepare(self.store)
+            if self.stopped:
+                return
             data = self.store.data
             changed = False
             if not data.get("ap_ssid"):
@@ -75,11 +83,14 @@ class NetworkController:
                 self.store.save()
             self.publish(ap_ssid=data["ap_ssid"], ap_password=data["ap_password"],
                          ap_address=data.get("ap_address", ""))
-            # A saved OS connection must not choose a radio on the user's
-            # behalf.  Scan while Netplan still owns the link, then take the
-            # radio for the setup hotspot.  Only an access point explicitly
-            # selected in the panel may move this run into the online state.
-            self.access_point("Set up Wi-Fi.")
+            if self.store.damaged:
+                self.access_point("Set up Wi-Fi.")
+            else:
+                # Netplan already owns the radio and its saved credentials.
+                # Give it a short window to associate and obtain an address.
+                self.saved_deadline = self.clock() + self.saved_connection_seconds
+                self.publish(state="starting", message="Trying saved Wi-Fi briefly...")
+                self.step()
         except Exception:
             self.unavailable()
 
@@ -101,6 +112,8 @@ class NetworkController:
             self.access_point()
 
     def access_point(self, message="Wi-Fi unavailable — cached slideshow continues."):
+        if self.stopped:
+            return
         self.next_check = float("inf")
         # Commit the recovery intention before making any disruptive change.
         self.store.data["waiting"] = True
@@ -114,7 +127,11 @@ class NetworkController:
                     points = scanned
             except Exception:
                 pass
+            if self.stopped:
+                return
             address = self.backend.ensure_access_point(self.store)
+            if self.stopped:
+                return
             self.store.data["ap_address"] = address
             self.store.save()
             self.publish(state="ap", address=address, ap_address=address,
@@ -169,6 +186,8 @@ class NetworkController:
     def step(self):
         """One event/timeout; offline idle time performs no backend operations."""
         with self.condition:
+            if self.stopped:
+                return
             pending = self.pending
             changed, self.changed = self.changed, False
             recover, self.recover_requested = self.recover_requested, False
@@ -182,7 +201,24 @@ class NetworkController:
                     return
                 self.pending = None
         try:
-            if pending:
+            if self.snapshot.state == "starting":
+                try:
+                    info = self.backend.upstream(timeout=2)
+                except Exception:
+                    info = None  # The OS supplicant may not have its socket yet.
+                if self.stopped:
+                    return
+                if info:
+                    self.store.data["waiting"] = False
+                    self.store.save()
+                    self.publish(state="online", address=info["address"], ssid=info["ssid"],
+                                 message="Connected to saved Wi-Fi. Setup becomes available if the link is lost.")
+                    self.next_check = self.clock() + self.interval
+                elif self.clock() >= self.saved_deadline:
+                    self.access_point("Saved Wi-Fi unavailable. Choose an access point and enter its password.")
+                else:
+                    self.next_check = min(self.clock() + 1, self.saved_deadline)
+            elif pending:
                 if pending["kind"] == "refresh":
                     self.publish(message="Scanning for all nearby Wi-Fi access points.")
                     self.backend.restore()

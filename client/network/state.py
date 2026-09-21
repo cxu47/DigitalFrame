@@ -61,7 +61,7 @@ class NetworkSnapshot:
         if self.online or self.state == "disabled":
             return None
         lines = [self.message]
-        if self.ap_ssid:
+        if self.ap_ssid and self.state != "starting":
             lines.append(f"Wi-Fi: {self.ap_ssid}  Password: {self.ap_password}")
         if self.state == "connecting":
             lines.append("Wi-Fi setup paused.")
@@ -72,7 +72,7 @@ class NetworkSnapshot:
                 lines.append(f"Open: http://{self.ap_address}:{port}")
             else:
                 lines.append("Control page starting...")
-        if self.ap_address and self.state != "ap" and not control_url:
+        if self.ap_address and self.state not in {"ap", "starting"} and not control_url:
             lines.append(f"Open when ready: http://{self.ap_address}:{port}")
         return "\n".join(lines)
 
