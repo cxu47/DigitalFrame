@@ -30,7 +30,7 @@ class NetworkSnapshot:
     state: str = "starting"
     ssid: str = ""
     address: str = ""
-    message: str = "Checking the board connection. Cached playback continues."
+    message: str = "Checking Wi-Fi..."
     ap_ssid: str = ""
     ap_password: str = field(default="", repr=False)
     ap_address: str = ""
@@ -62,14 +62,18 @@ class NetworkSnapshot:
             return None
         lines = [self.message]
         if self.ap_ssid:
-            lines += [f"Connect to Wi-Fi: {self.ap_ssid}", f"Setup password: {self.ap_password}"]
+            lines.append(f"Wi-Fi: {self.ap_ssid}  Password: {self.ap_password}")
         if self.state == "connecting":
-            lines.append("Setup hotspot temporarily unavailable during the attempt.")
+            lines.append("Wi-Fi setup paused.")
         elif self.state == "ap":
-            lines.append(f"Open: {control_url}" if control_url else "Control panel is starting or unavailable.")
-            lines.append("Enter your home Wi-Fi details to reconnect.")
-        if self.ap_address and (self.state != "ap" or not control_url):
-            lines.append(f"Setup URL when available: http://{self.ap_address}:{port}")
+            if control_url:
+                lines.append(f"Open: {control_url}")
+            elif self.ap_address:
+                lines.append(f"Open: http://{self.ap_address}:{port}")
+            else:
+                lines.append("Control page starting...")
+        if self.ap_address and self.state != "ap" and not control_url:
+            lines.append(f"Open when ready: http://{self.ap_address}:{port}")
         return "\n".join(lines)
 
 

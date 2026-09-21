@@ -70,7 +70,7 @@ def test_startup_always_uses_chooser_even_with_a_healthy_saved_connection(recove
     controller.start()
     assert controller.snapshot.state == "ap"
     assert controller.snapshot.can_submit
-    assert "will not connect" in controller.snapshot.message
+    assert controller.snapshot.message == "Set up Wi-Fi."
     backend.verify_upstream.assert_not_called()
     backend.ensure_access_point.assert_called_once()
     assert store.data["waiting"]

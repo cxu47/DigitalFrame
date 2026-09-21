@@ -6,28 +6,38 @@
   <title>$title</title>
 </head>
 <body>
-  <p><a href="/?lang=$toggle_language" lang="$toggle_page_language">$toggle_label</a></p>
   <h1>$title</h1>
+  <p><a href="/?lang=$toggle_language" lang="$toggle_page_language">$toggle_label</a></p>
+  <hr>
   <h2>$slideshow_control</h2>
-  <p>$current_duration</p>
-  <form method="post" action="/settings">
-    <label for="seconds">$seconds_per_photo</label>
-    <input id="seconds" name="display_seconds" type="text" inputmode="numeric"
-           value="$value" aria-describedby="error">
-    <button type="submit">$apply</button>
-  </form>
-  <form method="post" action="/folder">
-    <label for="folder">$photo_folder $folder_mode_check</label>
-    <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
-    <button type="submit">$apply_folder</button>
-  </form>
-  <form method="post" action="/months">
-    <fieldset aria-describedby="error">
-      <legend>$photo_months $month_mode_check</legend>
-      $month_options
-    </fieldset>
-    <button type="submit">$apply_months</button>
-  </form>
+  <ul>
+    <li>
+      <h3>$duration_control</h3>
+      <p>$current_duration</p>
+      <form method="post" action="/settings">
+        <label for="seconds">$seconds_per_photo</label>
+        <input id="seconds" name="display_seconds" type="text" inputmode="numeric"
+               value="$value" aria-describedby="error">
+        <button type="submit">$apply</button>
+      </form>
+    </li>
+    <li>
+      <h3>$folder_control $folder_mode_check</h3>
+      <form method="post" action="/folder">
+        <label for="folder">$choose_folder</label>
+        <select id="folder" name="folder" aria-describedby="error">$folder_options</select>
+        <button type="submit">$apply_folder</button>
+      </form>
+    </li>
+    <li>
+      <h3>$month_control $month_mode_check</h3>
+      <form method="post" action="/months">
+        <div aria-describedby="error">$month_options</div>
+        <button type="submit">$apply_months</button>
+      </form>
+    </li>
+  </ul>
+  <hr>
   <h2>$software_update</h2>
   <p>$update_status</p>
   <form method="post" action="/update/check">
@@ -35,6 +45,7 @@
     <button type="submit">$check_updates</button>
   </form>
   $update_form
+  <hr>
   <h2>$wifi_control</h2>
   <p>$wifi_status</p>
   $wifi_current
@@ -50,7 +61,8 @@
     <input type="hidden" name="token" value="$wifi_token">
     <button type="submit"$wifi_refresh_disabled>$refresh_access_points</button>
   </form>
-  <h2>$notes</h2>
+  <hr>
+  <h2>$logs_and_comments</h2>
   <p id="error" role="alert">$error</p>
   <section aria-label="$error_history" aria-live="polite">$issues</section>
   <p>$note_apply</p>

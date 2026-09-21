@@ -79,15 +79,13 @@ class NetworkController:
             # behalf.  Scan while Netplan still owns the link, then take the
             # radio for the setup hotspot.  Only an access point explicitly
             # selected in the panel may move this run into the online state.
-            self.access_point(
-                "Choose a Wi-Fi access point. The frame will not connect to a saved network automatically.")
+            self.access_point("Set up Wi-Fi.")
         except Exception:
             self.unavailable()
 
     def unavailable(self):
         self.next_check = float("inf")
-        self.publish(state="unavailable", address="",
-                     message="Wi-Fi setup unavailable. Check the board adapter, systemd-networkd, and helper service.")
+        self.publish(state="unavailable", address="", message="Wi-Fi setup unavailable.")
 
     def check_online(self):
         info = self.backend.verify_upstream()
@@ -107,7 +105,7 @@ class NetworkController:
         # Commit the recovery intention before making any disruptive change.
         self.store.data["waiting"] = True
         self.store.save()
-        self.publish(state="starting_ap", address="", message="Starting the setup hotspot. Cached playback continues.")
+        self.publish(state="starting_ap", address="", message="Starting Wi-Fi setup...")
         points = self.snapshot.access_points
         try:
             try:
