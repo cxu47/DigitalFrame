@@ -5,7 +5,7 @@ import json
 import os
 import re
 from threading import Event, Thread
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 from fastapi.testclient import TestClient
 import pytest
@@ -13,9 +13,11 @@ import pytest
 from client.network.client import NetworkClient
 from client.network.controller import NetworkController, SETUP_HOTSPOT_PASSWORD, StateFile
 from client.network.networkd import Networkd, parse_scan_results, select_subnet
+from client.network import networkd
 from client.network.service import Handler, Server
 from client.network.state import NetworkError, NetworkSnapshot, validate_credentials
 from client.control.app import create_app
+from client.control.page import render_page
 from client.settings import RuntimeSettings
 
 
@@ -26,6 +28,7 @@ def recovery(tmp_path):
     backend.ensure_access_point.return_value = "10.42.0.1"
     backend.ap_running.return_value = True
     backend.connect.return_value = None
+    backend.last_failure = ""
     backend.scan_access_points.return_value = (
         {"ssid": "home", "bssid": "02:00:00:00:00:01", "signal": -45,
          "channel": 6, "security": "WPA2", "supported": True},
@@ -189,8 +192,7 @@ def test_one_submission_waits_for_response_then_commits_or_restores_hotspot(reco
     if success:
         backend.connect.return_value = {"address": "192.168.1.90", "ssid": " home network "}
     else:
-        # The single radio cannot rescan while it is leaving a failed station
-        # attempt; the existing per-BSSID list must remain usable for retry.
+        # An empty fresh scan must not leave the boot-time list on the panel.
         backend.scan_access_points.return_value = ()
     clock[0] += 5
     controller.step()
@@ -199,9 +201,13 @@ def test_one_submission_waits_for_response_then_commits_or_restores_hotspot(reco
     assert controller.snapshot.online is success
     assert store.data["waiting"] is not success
     if not success:
-        assert controller.snapshot.can_submit
+        assert controller.snapshot.can_refresh
+        assert not controller.snapshot.can_submit
         assert controller.snapshot.ap_password == before.ap_password
         assert controller.snapshot.address == before.address
+        assert controller.snapshot.access_points == ()
+        backend.restore.assert_not_called()
+        backend.scan_access_points.assert_called_once()
     clock[0] += 100000
     if not success:
         backend.reset_mock()
@@ -223,11 +229,37 @@ def test_timed_out_connection_attempt_returns_to_wifi_chooser(recovery):
 
     backend.connect.assert_called_once_with(
         "home", "02:00:00:00:00:01", "password", store)
+    backend.restore.assert_not_called()
+    backend.scan_access_points.assert_called_once()
     backend.ensure_access_point.assert_called_once()
     assert controller.snapshot.state == "ap"
     assert controller.snapshot.can_submit
     assert controller.snapshot.message == (
         "Connection attempt failed. Enter your Wi-Fi details to try again.")
+
+
+def test_failed_connection_refreshes_access_points_before_next_page_load(recovery):
+    controller, backend, store, clock = recovery
+    controller.start()
+    refreshed = (
+        {"ssid": "new home", "bssid": "02:00:00:00:00:03", "signal": -35,
+         "channel": 1, "security": "WPA2", "supported": True},
+    )
+    backend.reset_mock()
+    backend.scan_access_points.return_value = refreshed
+
+    operation = controller.reserve("home", "02:00:00:00:00:01", "password")
+    controller.commit(operation)
+    clock[0] += 6
+    controller.step()
+
+    backend.restore.assert_not_called()
+    assert backend.mock_calls.index(call.scan_access_points()) < backend.mock_calls.index(
+        call.ensure_access_point(store))
+    assert controller.snapshot.access_points == refreshed
+    page = render_page(5, wifi=controller.snapshot).body.decode()
+    assert "new home — 02:00:00:00:00:03" in page
+    assert "home — 02:00:00:00:00:01" not in page
 
 
 def test_uncommitted_request_expires_without_dropping_ap(recovery):

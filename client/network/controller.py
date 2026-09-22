@@ -111,7 +111,8 @@ class NetworkController:
         else:
             self.access_point()
 
-    def access_point(self, message="Wi-Fi unavailable — cached slideshow continues."):
+    def access_point(self, message="Wi-Fi unavailable — cached slideshow continues.",
+                     *, preserve_points=True):
         if self.stopped:
             return
         self.next_check = float("inf")
@@ -119,7 +120,7 @@ class NetworkController:
         self.store.data["waiting"] = True
         self.store.save()
         self.publish(state="starting_ap", address="", message="Starting Wi-Fi setup...")
-        points = self.snapshot.access_points
+        points = self.snapshot.access_points if preserve_points else ()
         try:
             try:
                 scanned = self.backend.scan_access_points()
@@ -142,6 +143,12 @@ class NetworkController:
             except Exception:
                 pass
             self.unavailable()
+
+    def failed_connection(self, message):
+        # Scan with the station supplicant already holding the radio, then
+        # switch straight back to the hotspot. Restoring Netplan here starts
+        # another supplicant only to stop it again moments later.
+        self.access_point(message, preserve_points=False)
 
     def reserve(self, ssid, bssid, password):
         validate_credentials(ssid, password, bssid)
@@ -236,7 +243,7 @@ class NetworkController:
                     else:
                         message = getattr(self.backend, "last_failure", "") or (
                             "Could not connect with internet access. Check the password and try again.")
-                        self.access_point(message)
+                        self.failed_connection(message)
             elif self.snapshot.online and (changed or self.clock() >= self.next_check):
                 self.check_online()
             elif changed and self.snapshot.state == "ap" and not self.backend.ap_running():
@@ -244,7 +251,11 @@ class NetworkController:
             elif recover and self.snapshot.state == "unavailable":
                 self.start()
         except Exception:
-            self.access_point("Connection attempt failed. Enter your Wi-Fi details to try again.")
+            message = "Connection attempt failed. Enter your Wi-Fi details to try again."
+            if pending and pending["kind"] == "connect":
+                self.failed_connection(message)
+            else:
+                self.access_point(message)
 
     def run(self):
         self.start()

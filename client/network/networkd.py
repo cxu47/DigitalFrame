@@ -195,27 +195,34 @@ class Networkd:
         return self._address_info(self._status(timeout=timeout), timeout=timeout)
 
     def scan_access_points(self):
-        if self.owns_link:
-            return ()
+        helper = self.owns_link
+        if helper:
+            if self.mode != "station" or self.process is None or self.process.poll() is not None:
+                return ()
+            # Stop the failed association before asking this supplicant to scan.
+            try:
+                self._control("DISCONNECT", helper=True)
+            except OSError:
+                pass
         deadline = time.monotonic() + 10
         while True:
             try:
                 try:
-                    self._control("BSS_FLUSH 0", helper=False)
+                    self._control("BSS_FLUSH 0", helper=helper)
                 except OSError:
                     pass
-                if self._control("SCAN", helper=False).startswith("OK"):
+                if self._control("SCAN", helper=helper).startswith("OK"):
                     break
-                return ()
             except OSError:
-                if time.monotonic() >= deadline:
-                    return ()
-                time.sleep(.5)
+                pass
+            if time.monotonic() >= deadline:
+                return ()
+            time.sleep(.5)
         best = ()
         for _ in range(16):
             time.sleep(.5)
             try:
-                parsed = parse_scan_results(self._control("SCAN_RESULTS", helper=False))
+                parsed = parse_scan_results(self._control("SCAN_RESULTS", helper=helper))
             except OSError:
                 continue
             # scan_results can initially return the previous scan.  Keep
