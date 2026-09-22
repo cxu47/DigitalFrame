@@ -178,6 +178,7 @@ def test_one_submission_waits_for_response_then_commits_or_restores_hotspot(reco
     controller, backend, store, clock = recovery
     controller.start()
     before = controller.snapshot
+    backend.reset_mock()
     operation = controller.reserve(" home network ", "02:00:00:00:00:01", " password ")
     assert controller.snapshot.state == "connecting"
     with pytest.raises(NetworkError):
@@ -420,6 +421,36 @@ def test_scan_keeps_mesh_satellites_as_individual_access_points():
     assert next(point for point in points if point["ssid"] == "winter")["channel"] == 9
     hidden = next(point for point in points if point["bssid"] == "00:11:22:33:44:66")
     assert hidden["ssid"] == "Hidden network" and not hidden["supported"]
+
+
+def test_failed_station_scans_with_its_own_supplicant_without_netplan_handoff(tmp_path, monkeypatch):
+    backend = Networkd("wlan0", "02:00:00:00:00:01", "US", runtime=tmp_path,
+                       network_file=tmp_path / "network.conf")
+    backend.owns_link = True
+    backend.mode = "station"
+    backend.process = Mock(poll=Mock(return_value=None))
+    output = ("bssid / frequency / signal level / flags / ssid\n"
+              "02:00:00:00:00:03\t2412\t-35\t[WPA2-PSK-CCMP][ESS]\tnew home\n")
+    attempts = ["FAIL-BUSY", "OK"]
+
+    def control(command, *, helper):
+        assert helper is True
+        if command == "SCAN":
+            return attempts.pop(0)
+        return output if command == "SCAN_RESULTS" else "OK"
+
+    backend._control = Mock(side_effect=control)
+    monkeypatch.setattr(networkd.time, "sleep", lambda _: None)
+    points = backend.scan_access_points()
+
+    assert [point["ssid"] for point in points] == ["new home"]
+    assert backend._control.mock_calls.index(call("DISCONNECT", helper=True)) < (
+        backend._control.mock_calls.index(call("SCAN", helper=True)))
+    assert backend._control.call_count >= 4
+    backend.mode = "ap"
+    backend._control.reset_mock()
+    assert backend.scan_access_points() == ()
+    backend._control.assert_not_called()
 
 
 def test_wifi_html_sections_validation_disabled_states_and_credential_handoff(recovery):
