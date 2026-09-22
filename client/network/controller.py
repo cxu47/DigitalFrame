@@ -86,10 +86,14 @@ class NetworkController:
             if self.store.damaged:
                 self.access_point("Set up Wi-Fi.")
             else:
-                # Netplan already owns the radio and its saved credentials.
-                # Give it a short window to associate and obtain an address.
+                # Netplan owns the radio. Offer the last successful control-panel
+                # network alongside OS profiles, then wait for an address.
                 self.saved_deadline = self.clock() + self.saved_connection_seconds
                 self.publish(state="starting", message="Trying saved Wi-Fi briefly...")
+                try:
+                    self.backend.activate_saved(data.get("saved_network"))
+                except Exception:
+                    pass  # The OS profile may still finish connecting.
                 self.step()
         except Exception:
             self.unavailable()
@@ -236,9 +240,15 @@ class NetworkController:
                         pending["ssid"], pending["bssid"], pending["password"], self.store)
                     if info:
                         self.store.data["waiting"] = False
-                        self.store.save()
+                        try:
+                            self.store.save()
+                        except OSError:
+                            info["saved"] = False
+                        message = ("Connected. Rejoin your home Wi-Fi and open the URL on the slideshow."
+                                   if info.get("saved", True) else
+                                   "Connected, but this Wi-Fi could not be saved for the next reboot.")
                         self.publish(state="online", ssid=info["ssid"], address=info["address"],
-                                     message="Connected. Rejoin your home Wi-Fi and open the URL on the slideshow.")
+                                     message=message)
                         self.next_check = self.clock() + self.interval
                     else:
                         message = getattr(self.backend, "last_failure", "") or (

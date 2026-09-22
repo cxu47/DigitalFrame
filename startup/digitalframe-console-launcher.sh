@@ -42,8 +42,8 @@ fi
 
 cd "$project_dir" || exit 1
 
-# Environment values override .env only for this process. The helper always
-# starts in setup-hotspot/chooser mode, even if Netplan knows an old network.
+# Environment values override .env only for this process. The helper tries
+# saved Wi-Fi briefly before starting its setup hotspot.
 WIFI_SETUP_ENABLED=true \
 CONTROL_HOST=0.0.0.0 \
 "$uv_bin" run --no-sync digitalframe run

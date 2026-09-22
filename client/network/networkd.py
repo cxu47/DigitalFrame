@@ -318,6 +318,7 @@ class Networkd:
 
     def connect(self, ssid, bssid, password, store):
         self.last_failure = "Could not connect. Check the password or choose another access point."
+        psk = _psk(ssid, password)
         network = (
             "[Match]\n" f"Name={self.interface}\n\n"
             "[Network]\nDHCP=yes\nLinkLocalAddressing=ipv6\n\n"
@@ -328,7 +329,7 @@ class Networkd:
             f"ctrl_interface={self.control_dir}\ncountry={self.country}\n"
             "network={\n" f"  ssid={ssid.encode('utf-8').hex()}\n  bssid={bssid}\n"
             "  key_mgmt=WPA-PSK\n  proto=RSN\n  pairwise=CCMP\n  group=CCMP\n"
-            f"  psk={_psk(ssid, password)}\n" "}\n"
+            f"  psk={psk}\n" "}\n"
         )
         self._start_supplicant(config, "station")
         deadline = time.monotonic() + 55
@@ -356,6 +357,16 @@ class Networkd:
                 if info:
                     got_address = True
                     self.last_failure = ""
+                    previous = store.data.get("saved_network")
+                    store.data["saved_network"] = {"ssid": ssid, "psk": psk}
+                    try:
+                        store.save()
+                    except OSError:
+                        if previous is None:
+                            store.data.pop("saved_network", None)
+                        else:
+                            store.data["saved_network"] = previous
+                        info["saved"] = False
                     return info
             except OSError:
                 # Association cannot be queried until the child has created
@@ -371,9 +382,70 @@ class Networkd:
         return None
 
     def activate_saved(self, identity):
-        # Netplan remains the only persistent owner; DigitalFrame never creates
-        # a boot-time profile on this backend.
-        return None
+        """Offer a successful control-panel network to Netplan's supplicant."""
+        try:
+            self._run([SYSTEMCTL, "start", self.netplan_service], timeout=5, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # The caller still checks whether Netplan has connected.
+        try:
+            return self._offer_saved_profile(identity)
+        finally:
+            # An OS profile may also be saved; connect if currently disconnected.
+            try:
+                self._control("RECONNECT", helper=False, timeout=1)
+            except OSError:
+                pass
+
+    def _offer_saved_profile(self, identity):
+        if not isinstance(identity, dict):
+            return False
+        ssid, psk = identity.get("ssid"), identity.get("psk")
+        try:
+            ssid_bytes = ssid.encode("utf-8") if isinstance(ssid, str) else b""
+        except UnicodeError:
+            ssid_bytes = b""
+        if not 1 <= len(ssid_bytes) <= 32 or any(ord(character) < 32 for character in ssid) or (
+            not isinstance(psk, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", psk)
+        ):
+            return False
+        deadline = time.monotonic() + 3
+        network_id = None
+        while network_id is None:
+            try:
+                response = self._control("ADD_NETWORK", helper=False, timeout=1).strip()
+                if not response.isdecimal():
+                    return False
+                network_id = response
+            except OSError:
+                if time.monotonic() >= deadline:
+                    return False
+                time.sleep(.25)
+        settings = (
+            ("ssid", ssid_bytes.hex()),
+            ("psk", psk.lower()),
+            ("key_mgmt", "WPA-PSK"),
+            ("proto", "RSN"),
+            ("pairwise", "CCMP"),
+            ("group", "CCMP"),
+            ("priority", "1"),
+        )
+        enabled = False
+        try:
+            for name, value in settings:
+                if not self._control(f"SET_NETWORK {network_id} {name} {value}",
+                                     helper=False, timeout=1).startswith("OK"):
+                    return False
+            enabled = self._control(f"ENABLE_NETWORK {network_id}",
+                                    helper=False, timeout=1).startswith("OK")
+            return enabled
+        except OSError:
+            return False
+        finally:
+            if not enabled:
+                try:
+                    self._control(f"REMOVE_NETWORK {network_id}", helper=False, timeout=1)
+                except OSError:
+                    pass
 
     def restore(self):
         """Return ownership to the unchanged Netplan service."""

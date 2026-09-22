@@ -63,7 +63,7 @@ def test_offline_remains_idle_across_hours_events_and_restart(recovery):
     new.start()
     assert new.snapshot.can_submit
     assert (new.snapshot.ap_ssid, new.snapshot.ap_password) == credentials
-    backend.activate_saved.assert_not_called()
+    backend.activate_saved.assert_called_once_with(None)
     backend.upstream.assert_called_once_with(timeout=2)
 
 
@@ -80,10 +80,13 @@ def test_startup_uses_a_healthy_saved_connection(recovery):
 
 def test_saved_connection_gets_a_short_window_before_wifi_chooser(recovery):
     _, backend, store, clock = recovery
+    saved = {"ssid": "home", "psk": "a" * 64}
+    store.data["saved_network"] = saved
     controller = NetworkController(backend, store, clock=lambda: clock[0],
                                    saved_connection_seconds=15)
     controller.start()
     assert controller.snapshot.state == "starting"
+    backend.activate_saved.assert_called_once_with(saved)
     assert backend.upstream.call_count == 1
     assert "DigitalFrame-" not in controller.snapshot.banner()
     clock[0] += 6
@@ -111,6 +114,23 @@ def test_saved_connection_can_succeed_during_startup_window(recovery):
     controller.step()
     assert controller.snapshot.online
     assert store.data["waiting"] is False
+    backend.ensure_access_point.assert_not_called()
+
+
+def test_startup_offers_last_successful_control_panel_network(recovery):
+    _, backend, store, clock = recovery
+    saved = {"ssid": "home", "psk": "a" * 64}
+    store.data["saved_network"] = saved
+    store.save()
+    controller = NetworkController(backend, StateFile(store.path), clock=lambda: clock[0],
+                                   saved_connection_seconds=15)
+    controller.start()
+    backend.activate_saved.assert_called_once_with(saved)
+    assert controller.snapshot.state == "starting"
+    backend.upstream.return_value = {"address": "192.168.1.90", "ssid": "home"}
+    clock[0] += 6
+    controller.step()
+    assert controller.snapshot.online
     backend.ensure_access_point.assert_not_called()
 
 
@@ -324,7 +344,7 @@ def test_failed_boot_activation_falls_back_to_ap(recovery):
     backend.activate_saved.side_effect = TimeoutError()
     controller.start()
     assert controller.snapshot.can_submit
-    backend.activate_saved.assert_not_called()
+    backend.activate_saved.assert_called_once_with(None)
 
 
 def test_corrupt_recovery_record_does_not_attempt_upstream(tmp_path):
@@ -401,9 +421,47 @@ def test_regulatory_country_applies_to_hotspot_and_home_station(tmp_path, monkey
         "address": "192.168.1.23", "ssid": status["ssid"], "interface": "wlan0"})
     assert backend.connect("home", "02:00:00:00:00:02", "secret-password", store)["address"] == "192.168.1.23"
     assert "country=CN\n" in configs[1][0] and configs[1][1] == "station"
+    assert store.data["saved_network"] == {
+        "ssid": "home", "psk": networkd._psk("home", "secret-password")}
+    assert "secret-password" not in store.path.read_text()
+    assert store.path.stat().st_mode & 0o777 == 0o600
     assert backend.upstream()["ssid"] == "home"  # No third-party HTTP probe.
     with pytest.raises(NetworkError, match="two-letter"):
         Networkd("wlan0", "02:00:00:00:00:01", "China")
+
+
+def test_saved_panel_network_is_added_to_os_supplicant(tmp_path):
+    backend = Networkd("wlan0", "02:00:00:00:00:01", "US", runtime=tmp_path,
+                       network_file=tmp_path / "network.conf")
+    backend._run = Mock()
+    backend._control = Mock(side_effect=lambda command, **_: "2" if command == "ADD_NETWORK" else "OK")
+    saved = {"ssid": "new home", "psk": "A" * 64}
+
+    assert backend.activate_saved(saved)
+    backend._run.assert_called_once_with(
+        [networkd.SYSTEMCTL, "start", backend.netplan_service], timeout=5, check=False)
+    assert call("ADD_NETWORK", helper=False, timeout=1) in backend._control.mock_calls
+    assert call("SET_NETWORK 2 ssid 6e657720686f6d65", helper=False, timeout=1) in backend._control.mock_calls
+    assert call("SET_NETWORK 2 psk " + "a" * 64, helper=False, timeout=1) in backend._control.mock_calls
+    assert call("ENABLE_NETWORK 2", helper=False, timeout=1) in backend._control.mock_calls
+    assert call("RECONNECT", helper=False, timeout=1) in backend._control.mock_calls
+    assert call("REMOVE_NETWORK 2", helper=False, timeout=1) not in backend._control.mock_calls
+    backend._control.reset_mock()
+    assert not backend.activate_saved({"ssid": "home", "psk": "bad"})
+    backend._control.assert_called_once_with("RECONNECT", helper=False, timeout=1)
+
+
+def test_failed_saved_profile_setup_leaves_os_profiles_available(tmp_path):
+    backend = Networkd("wlan0", "02:00:00:00:00:01", "US", runtime=tmp_path,
+                       network_file=tmp_path / "network.conf")
+    backend._run = Mock()
+    backend._control = Mock(side_effect=lambda command, **_: (
+        "3" if command == "ADD_NETWORK" else
+        "FAIL" if command.startswith("SET_NETWORK 3 psk ") else "OK"))
+
+    assert not backend.activate_saved({"ssid": "home", "psk": "a" * 64})
+    assert call("REMOVE_NETWORK 3", helper=False, timeout=1) in backend._control.mock_calls
+    assert backend._control.mock_calls[-1] == call("RECONNECT", helper=False, timeout=1)
 
 
 def test_scan_keeps_mesh_satellites_as_individual_access_points():

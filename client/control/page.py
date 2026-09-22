@@ -99,6 +99,7 @@ _ZH_MESSAGES = {
     "Scan refreshed. Choose an access point and enter its password.": "扫描已刷新。请选择接入点并输入密码。",
     "Trying your Wi-Fi. Association and DHCP may take up to one minute.": "正在尝试连接 Wi-Fi。关联和 DHCP 最多可能需要一分钟。",
     "Connected. Rejoin your home Wi-Fi and open the URL on the slideshow.": "已连接。请重新连接家庭 Wi-Fi，并打开幻灯片上显示的网址。",
+    "Connected, but this Wi-Fi could not be saved for the next reboot.": "已连接，但无法保存此 Wi-Fi 供下次重启使用。",
     "Connection attempt failed. Enter your Wi-Fi details to try again.": "连接失败。请输入 Wi-Fi 信息后重试。",
     "Wi-Fi connected. Setup becomes available if the link is lost.": "Wi-Fi 已连接。连接断开时会启用设置。",
     "Enter a positive whole number of seconds, such as 5.": "请输入正整数秒数，例如 5。",
